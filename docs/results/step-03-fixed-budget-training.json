@@ -1,0 +1,27 @@
+{
+  "status": "verified",
+  "step": 3,
+  "contract_sha256": "6abece65628b3e3071c2ab27df41e21ed163656a59ef023e971191c5322511b2",
+  "mode": "confirmatory",
+  "expected_jobs": 60,
+  "observed_jobs": 60,
+  "run_reports_read": 60,
+  "device_types": [
+    "cuda"
+  ],
+  "runtime_environment_count": 1,
+  "optimizer_updates_per_job": 600,
+  "padded_token_positions_per_job": 2457600,
+  "padded_token_positions_all_jobs": 147456000,
+  "fixed_final_checkpoint": 600,
+  "early_stopping_used": false,
+  "verification_passed": true,
+  "verification_errors": [],
+  "supported_claim": "Sixty source-task encoders were trained from one frozen base snapshot under the same tokenizer, padded sequence budget, batch size, optimiser schedule, update count and final-checkpoint rule, with future fields unavailable to the source-task runtime.",
+  "unsupported_claims": [
+    "all source tasks were learned successfully",
+    "authentic preference beats any control",
+    "authentic preference predicts the future",
+    "any future effect is preference-specific"
+  ]
+}
