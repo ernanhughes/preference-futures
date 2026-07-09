@@ -61,6 +61,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_articles=args.temporal_max_articles,
     )
     write_temporal_pairs(temporal_path, temporal_audit_path, temporal_pairs, temporal_audit)
+    temporal_gates = temporal_audit.get("gates", {})
+    if not temporal_gates or not all(value is True for value in temporal_gates.values()):
+        failed = ", ".join(
+            name for name, passed in temporal_gates.items() if passed is not True
+        )
+        raise ValueError(f"independent temporal-pool gates failed: {failed or 'missing gates'}")
 
     manifest, outputs = build_compute_matched_corpora(
         episodes,
