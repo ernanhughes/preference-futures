@@ -13,7 +13,7 @@ NEWSEDITS_RECORD_SCHEMA_VERSION = 1
 
 @dataclass(frozen=True, slots=True)
 class ArticleSchema:
-    """Resolved column names for a NewsEdits article-version table."""
+    """Resolved column names for a full article-version table."""
 
     table: str
     source: str
@@ -26,8 +26,19 @@ class ArticleSchema:
 
 
 @dataclass(frozen=True, slots=True)
+class SplitSentenceSchema:
+    """Resolved columns for the official NewsEdits ``split_sentences`` table."""
+
+    table: str
+    article_id: str
+    version_id: str
+    sentence_id: str
+    sentence: str
+
+
+@dataclass(frozen=True, slots=True)
 class ArticleVersion:
-    """One full article version loaded from SQLite."""
+    """One reconstructed article version loaded from SQLite."""
 
     source: str
     article_id: str

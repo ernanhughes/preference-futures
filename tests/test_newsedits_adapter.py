@@ -7,7 +7,10 @@ from pathlib import Path
 from preference_futures.newsedits import (
     ExtractionConfig,
     discover_article_schema,
+    discover_split_sentence_schema,
     extract_from_database,
+    extract_from_split_database,
+    infer_source_name,
     sentence_future_map,
 )
 from preference_futures.newsedits.cli import main
@@ -131,6 +134,67 @@ def _build_fixture_database(path: Path) -> None:
         connection.close()
 
 
+def _build_split_sentence_database(path: Path) -> None:
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute("CREATE TABLE doc_level_stats (entry_id TEXT, versions INTEGER)")
+        connection.execute(
+            "CREATE TABLE matched_sentences "
+            "(entry_id TEXT, version INTEGER, old_sent_idx INTEGER, new_sent_idx INTEGER)"
+        )
+        connection.execute(
+            """
+            CREATE TABLE split_sentences (
+                entry_id TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                sent_idx INTEGER NOT NULL,
+                sentence TEXT NOT NULL
+            )
+            """
+        )
+        versions = {
+            ("entry-revised", 1): [
+                "The opening sentence remains unchanged.",
+                "The committee may meet on Monday.",
+                "The closing sentence remains unchanged.",
+            ],
+            ("entry-revised", 2): [
+                "The opening sentence remains unchanged.",
+                "The committee will meet on Monday.",
+                "The closing sentence remains unchanged.",
+            ],
+            ("entry-revised", 3): [
+                "The opening sentence remains unchanged.",
+                "The committee will meet on Tuesday.",
+                "The closing sentence remains unchanged.",
+            ],
+            ("entry-stable", 1): [
+                "The first paragraph remains in place.",
+                "The vote could happen later today.",
+                "The final paragraph remains in place.",
+            ],
+            ("entry-stable", 2): [
+                "The first paragraph remains in place.",
+                "The vote will happen later today.",
+                "The final paragraph remains in place.",
+            ],
+            ("entry-stable", 3): [
+                "The first paragraph remains in place.",
+                "The vote will happen later today.",
+                "The final paragraph remains in place.",
+            ],
+        }
+        rows = [
+            (entry_id, version, sentence_index, sentence)
+            for (entry_id, version), sentences in versions.items()
+            for sentence_index, sentence in enumerate(sentences)
+        ]
+        connection.executemany("INSERT INTO split_sentences VALUES (?, ?, ?, ?)", rows)
+        connection.commit()
+    finally:
+        connection.close()
+
+
 def test_schema_discovery_and_fixture_extraction(tmp_path: Path) -> None:
     database_path = tmp_path / "newsedits.sqlite"
     _build_fixture_database(database_path)
@@ -160,6 +224,35 @@ def test_schema_discovery_and_fixture_extraction(tmp_path: Path) -> None:
     assert result.audit.exclusions["ambiguous_replacement"] == 1
 
 
+def test_official_split_sentence_database_is_discovered_and_extracted(tmp_path: Path) -> None:
+    database_path = tmp_path / "nyt-matched-sentences.db"
+    _build_split_sentence_database(database_path)
+
+    connection = sqlite3.connect(database_path)
+    try:
+        schema = discover_split_sentence_schema(connection)
+        result = extract_from_split_database(
+            connection,
+            schema,
+            source_name=infer_source_name(database_path),
+            config=ExtractionConfig(min_sentence_chars=15),
+            seed=7,
+        )
+    finally:
+        connection.close()
+
+    assert schema.table == "split_sentences"
+    assert schema.article_id == "entry_id"
+    assert infer_source_name(database_path) == "nyt"
+    assert len(result.examples) == 2
+    assert {example.source for example in result.examples} == {"nyt"}
+    outcomes = {
+        example.article_id: example.build_episode(seed=7).future_revised
+        for example in result.examples
+    }
+    assert outcomes == {"entry-revised": True, "entry-stable": False}
+
+
 def test_sentence_future_map_marks_deleted_or_ambiguous_branch_as_changed() -> None:
     mapped = sentence_future_map(
         ["Opening remains.", "The selected sentence remains here.", "Closing remains."],
@@ -167,6 +260,23 @@ def test_sentence_future_map_marks_deleted_or_ambiguous_branch_as_changed() -> N
     )
 
     assert mapped[1] is None
+
+
+def test_inspect_reports_split_schema_without_requiring_article_table(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    database_path = tmp_path / "nyt-matched-sentences.db"
+    _build_split_sentence_database(database_path)
+
+    exit_code = main(["inspect", "--db", str(database_path)])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["detected_schemas"]["article_versions"] is None
+    assert payload["detected_schemas"]["split_sentences"]["table"] == "split_sentences"
+    assert payload["tables"]["split_sentences"]["rows"] == 18
+    assert payload["inferred_source_name"] == "nyt"
 
 
 def test_cli_writes_jsonl_and_audit(tmp_path: Path) -> None:
@@ -199,3 +309,36 @@ def test_cli_writes_jsonl_and_audit(tmp_path: Path) -> None:
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
     assert audit["accepted_examples"] == 2
     assert audit["exclusions"]["ambiguous_replacement"] == 1
+    assert audit["input_format"] == "article_versions"
+
+
+def test_cli_auto_extracts_official_split_sentence_database(tmp_path: Path) -> None:
+    database_path = tmp_path / "nyt-matched-sentences.db"
+    output_path = tmp_path / "episodes.jsonl"
+    audit_path = tmp_path / "audit.json"
+    _build_split_sentence_database(database_path)
+
+    exit_code = main(
+        [
+            "extract",
+            "--db",
+            str(database_path),
+            "--out",
+            str(output_path),
+            "--audit-out",
+            str(audit_path),
+            "--seed",
+            "11",
+            "--min-sentence-chars",
+            "15",
+        ]
+    )
+
+    assert exit_code == 0
+    records = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+    assert len(records) == 2
+    assert {record["source"] for record in records} == {"nyt"}
+    audit = json.loads(audit_path.read_text(encoding="utf-8"))
+    assert audit["accepted_examples"] == 2
+    assert audit["input_format"] == "split_sentences"
+    assert audit["source_name"] == "nyt"

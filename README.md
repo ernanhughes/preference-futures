@@ -16,19 +16,35 @@ The episode builder randomises whether V1 appears as candidate A or B, while pre
 
 ## NewsEdits adapter
 
-The old experiment scripts remain in `src/preference_futures/newsedits/` as research provenance. New ingestion code uses the importable package API:
+The adapter accepts both NewsEdits storage forms:
+
+1. a full article-version table containing source, article ID, version ID and article text;
+2. official source-specific databases such as `nyt-matched-sentences.db`, reconstructed from the `split_sentences` table.
+
+Official `split_sentences` columns are discovered through aliases for:
+
+```text
+entry_id
+version
+sent_idx
+sentence
+```
+
+The publisher is inferred from filenames such as `nyt-matched-sentences.db`, or can be supplied explicitly with `--source-name`.
 
 ```python
 from preference_futures.newsedits import (
     discover_article_schema,
+    discover_split_sentence_schema,
     extract_from_database,
+    extract_from_split_database,
 )
 ```
 
 The adapter is dependency-free and performs:
 
 - SQLite schema discovery;
-- read-only article-version loading;
+- read-only article-version loading or reconstruction;
 - deterministic article sampling;
 - conservative one-to-one V0→V1 sentence matching;
 - V1→V2 revised/stable outcome resolution;
@@ -50,18 +66,18 @@ Run tests and linting:
 .\scripts\01-check.ps1
 ```
 
-Run the current end-to-end smoke workflow:
+Run the current end-to-end smoke workflow directly against an official database:
 
 ```powershell
 .\scripts\20-current-smoke-pipeline.ps1 `
-  -DatabasePath C:\data\newsedits.db
+  -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db"
 ```
 
 Run the full extraction after the smoke output has been reviewed:
 
 ```powershell
 .\scripts\12-newsedits-full.ps1 `
-  -DatabasePath C:\data\newsedits.db
+  -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db"
 ```
 
 See [`scripts/README.md`](scripts/README.md) for every script and parameter.
@@ -71,12 +87,13 @@ See [`scripts/README.md`](scripts/README.md) for every script and parameter.
 ```text
 1. Canonical episode contract       done
 2. NewsEdits source adapter         implemented
-3. PowerShell run scripts           implemented
-4. Context viability audit          next
-5. Grouped split manifests
-6. Preference-task baselines
-7. Frozen representation transfer
-8. Sample-efficiency and shortcut controls
+3. Official split_sentences input   implemented
+4. PowerShell run scripts           implemented
+5. Context viability audit          next
+6. Grouped split manifests
+7. Preference-task baselines
+8. Frozen representation transfer
+9. Sample-efficiency and shortcut controls
 ```
 
 ## Development
