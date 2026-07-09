@@ -35,6 +35,7 @@ preference-futures-train = "preference_futures.training.cli:main"
 preference-futures-select-encoders = "preference_futures.selection.cli:main"
 preference-futures-representations = "preference_futures.representations.cli:main"
 preference-futures-probes = "preference_futures.probes.cli:main"
+preference-futures-milestone = "preference_futures.milestone.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
