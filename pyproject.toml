@@ -18,6 +18,9 @@ dev = [
   "ruff>=0.5",
 ]
 
+[project.scripts]
+preference-futures-newsedits = "preference_futures.newsedits.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

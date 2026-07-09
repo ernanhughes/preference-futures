@@ -16,24 +16,22 @@ class RevisionTriplet:
 
     ``v0_sentence`` is the sentence replaced at the decision boundary.
     ``v1_sentence`` is the replacement retained by the editor.
-    ``v2_sentence`` is the next observed state of that retained branch.
+    ``v2_sentence`` is its unambiguous next state, or ``None`` when the selected
+    sentence was revised/removed without a one-to-one continuation.
     """
 
     episode_id: str
     lineage_id: str
     v0_sentence: str
     v1_sentence: str
-    v2_sentence: str
+    v2_sentence: str | None
 
     def __post_init__(self) -> None:
-        for field_name in (
-            "episode_id",
-            "lineage_id",
-            "v0_sentence",
-            "v1_sentence",
-            "v2_sentence",
-        ):
+        for field_name in ("episode_id", "lineage_id", "v0_sentence", "v1_sentence"):
             _validate_non_empty_text(field_name, getattr(self, field_name))
+
+        if self.v2_sentence is not None:
+            _validate_non_empty_text("v2_sentence", self.v2_sentence)
 
         if _normalise_text(self.v0_sentence) == _normalise_text(self.v1_sentence):
             raise ValueError("v0_sentence and v1_sentence must describe a real replacement")
@@ -122,9 +120,9 @@ class PreferenceEpisode:
 def build_preference_episode(triplet: RevisionTriplet, *, seed: int) -> PreferenceEpisode:
     """Build a deterministic randomised pair from one revision triplet.
 
-    The selected candidate is always V1 and the rejected candidate is always V0. Only their
-    presentation order changes. The future outcome is defined by whether V1 changes in V2, so it
-    remains attached to the selected branch rather than to candidate position.
+    The selected candidate is always V1 and the rejected candidate is always V0.
+    Only their presentation order changes. A missing one-to-one V2 continuation
+    counts as revised/removed.
     """
 
     selected_is_a = _selected_goes_in_slot_a(triplet.episode_id, seed=seed)
@@ -143,13 +141,15 @@ def build_preference_episode(triplet: RevisionTriplet, *, seed: int) -> Preferen
         candidate_a=candidate_a,
         candidate_b=candidate_b,
         selected_index=selected_index,
-        future_revised=_normalise_text(triplet.v2_sentence)
-        != _normalise_text(triplet.v1_sentence),
+        future_revised=(
+            triplet.v2_sentence is None
+            or _normalise_text(triplet.v2_sentence) != _normalise_text(triplet.v1_sentence)
+        ),
     )
 
 
 def _selected_goes_in_slot_a(episode_id: str, *, seed: int) -> bool:
-    """Return a stable pseudo-random orientation without relying on process hash state."""
+    """Return a stable pseudo-random orientation without process hash state."""
 
     digest = sha256(f"{seed}\0{episode_id}".encode("utf-8")).digest()
     return bool(digest[0] & 1)

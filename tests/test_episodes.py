@@ -45,6 +45,18 @@ def test_whitespace_only_v1_to_v2_change_is_stable() -> None:
     assert episode.selected_candidate == triplet.v1_sentence
 
 
+def test_missing_v2_continuation_is_revised_or_removed() -> None:
+    triplet = RevisionTriplet(
+        episode_id="article-8:sentence-5:v0-v1-v2",
+        lineage_id="article-8",
+        v0_sentence="The vote could happen tomorrow.",
+        v1_sentence="The vote will happen tomorrow.",
+        v2_sentence=None,
+    )
+
+    assert build_preference_episode(triplet, seed=3).future_revised is True
+
+
 @pytest.mark.parametrize(
     ("field_name", "value"),
     [
