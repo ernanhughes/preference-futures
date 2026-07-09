@@ -33,6 +33,7 @@ preference-futures-corpora = "preference_futures.corpora.cli:main"
 preference-futures-verify-corpora = "preference_futures.corpora.verify_cli:main"
 preference-futures-train = "preference_futures.training.cli:main"
 preference-futures-select-encoders = "preference_futures.selection.cli:main"
+preference-futures-representations = "preference_futures.representations.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
