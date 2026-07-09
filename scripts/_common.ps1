@@ -31,8 +31,35 @@ function Invoke-CheckedCommand {
 
     Write-Host "> $FilePath $($ArgumentList -join ' ')" -ForegroundColor Cyan
     & $FilePath @ArgumentList
-    if ($LASTEXITCODE -ne 0) {
-        throw "Command failed with exit code $LASTEXITCODE: $FilePath"
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw ("Command failed with exit code {0}: {1}" -f $exitCode, $FilePath)
+    }
+}
+
+function Invoke-CheckedScript {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptPath,
+
+        [hashtable]$Parameters = @{}
+    )
+
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        throw ("Script does not exist: {0}" -f $ScriptPath)
+    }
+
+    Write-Host "> & $ScriptPath" -ForegroundColor Cyan
+    try {
+        & $ScriptPath @Parameters
+        $succeeded = $?
+    }
+    catch {
+        throw ("Script failed: {0}`n{1}" -f $ScriptPath, $_.Exception.Message)
+    }
+
+    if (-not $succeeded) {
+        throw ("Script failed without a terminating error: {0}" -f $ScriptPath)
     }
 }
 
@@ -58,7 +85,7 @@ function Resolve-RequiredFile {
 
     $resolved = Resolve-RepositoryPath -Path $Path
     if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
-        throw "$Label does not exist: $resolved"
+        throw ("{0} does not exist: {1}" -f $Label, $resolved)
     }
     return $resolved
 }
