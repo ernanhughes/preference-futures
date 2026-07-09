@@ -172,7 +172,7 @@ def iter_split_article_versions(
     *,
     source_name: str,
 ) -> Iterator[tuple[tuple[str, str], tuple[ArticleVersion, ...]]]:
-    """Reconstruct complete versions from official ``split_sentences`` rows."""
+    """Reconstruct versions while preserving official ``split_sentences`` rows."""
 
     if not selected_ids:
         return
@@ -216,12 +216,14 @@ def iter_split_article_versions(
         nonlocal current_sentences
         if current_article is None or current_version is None or not current_sentences:
             return
+        source_sentences = tuple(current_sentences)
         versions.append(
             ArticleVersion(
                 source=source_name,
                 article_id=current_article,
                 version_id=current_version,
-                text=" ".join(current_sentences),
+                text=" ".join(source_sentences),
+                sentences=source_sentences,
             )
         )
         current_sentences = []
