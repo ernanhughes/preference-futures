@@ -26,8 +26,10 @@ This document separates verified repository facts from active hypotheses. Every 
 | C10 | Six source-task training regimes can be materialised under the frozen Step 1 boundary with equal record counts, no future-label fields and an evaluation-disjoint temporal pool. | Verified | `scripts/50-build-compute-matched-corpora.ps1`, `scripts/51-verify-compute-matched-corpora.ps1` | `artifacts/transfer/corpora/manifest.json`, `corpus-summary.md`, `corpus-verification.json`, `temporal-pairs-audit.json`, `docs/results/step-02-compute-matched-corpora.json` | Any regime receives a different record count, a future/V2 field enters source training, test lineages enter preference-derived training, temporal lineages overlap evaluation, or persisted verification fails. |
 | C11 | On the canonical NewsEdits V0→V1 pair, the authentic retained-candidate target and the exact-pair newer-candidate target are identical by construction. | Design identity | `docs/experiments/02-compute-matched-corpora.md` | Step 2 manifest identification note | A dataset contains contemporaneous alternatives whose authentic preference label is not determined by chronological replacement. |
 | C12 | Equal Step 2 record counts do not imply equal raw text exposure: the independent temporal corpus is approximately 7% longer than the authentic corpus under the current whitespace-token audit. | Verified | `scripts/50-build-compute-matched-corpora.ps1` | `corpus-summary.md`, `manifest.json`, `docs/results/step-02-compute-matched-corpora.json` | Recalculation under the frozen source artifacts removes the exposure gap, or Step 3 tokenisation shows that the whitespace audit materially misstates relative model-token exposure. |
+| C13 | One Step 3 trainer can freeze an immutable base snapshot and give all six trained regimes the same tokenizer, maximum length, fixed padding, batch size, optimizer schedule, update count and final-checkpoint rule. | Implemented | `scripts/60-prepare-fixed-budget-training.ps1`, `scripts/61-step3-smoke.ps1`, `scripts/62-train-fixed-budget-representations.ps1`, `scripts/63-verify-fixed-budget-training.ps1` | `contract.json`, `training-plan.md`, per-job `run.json`, `training-verification-confirmatory.json` | A real six-regime smoke run cannot load all objectives, budgets differ within a fold, an artifact hash fails, or confirmatory runs use different checkpoint rules. |
+| C14 | Step 3 can remove future-bearing episode fields through an allow-list before source-task examples are materialised, while reproducing the exact Step 2 serialized pair view. | Implemented | `tests/test_fixed_budget_training.py` plus Step 3 smoke | Test and smoke reports | A future/V2 field reaches a source example, or frozen MLM mask indices no longer address the Step 2 whitespace words. |
 | H1 | Authentic preference training creates a frozen representation that predicts later selected-branch outcomes better than the same generic encoder. | Pending | Future representation-transfer script | Future transfer report | Authentic preference representation does not beat the generic encoder on grouped held-out lineages. |
-| H2 | Any transfer advantage is specific to authentic revision-choice supervision rather than extra training, domain adaptation, pair exposure, random supervision, shuffled decision alignment or generic temporal discrimination. | Pending | Step 2 control corpora plus future compute-matched trainer | Future control comparison report | Language adaptation, pair exposure, independent temporal direction, random labels, or shuffled preference match or beat authentic preference. |
+| H2 | Any transfer advantage is specific to authentic revision-choice supervision rather than extra training, domain adaptation, pair exposure, random supervision, shuffled decision alignment or generic temporal discrimination. | Pending | Step 2 control corpora plus the Step 3 fixed-budget trainer | Future control comparison report | Language adaptation, pair exposure, independent temporal direction, random labels, or shuffled preference match or beat authentic preference. |
 | H3 | Preference transfer survives numerical masking, number-dominant exclusion, clean-prose filtering and exact-pair-reversal exclusion. | Pending | Future ablation suite using `numeric-flags.jsonl` and context flags | Future ablation report | The advantage disappears under one or more shortcut controls. |
 | H4 | Preference training improves future-label sample efficiency. | Pending | Future learning-curve script | Future sample-efficiency report | The generic representation reaches the same loss using no more future-labelled lineages. |
 
@@ -81,6 +83,30 @@ Every builder gate and persisted-verification check passed.
 
 The temporal arm has approximately 7% more whitespace-token exposure than the authentic arm. Step 3 must therefore enforce a fixed tokenizer, maximum sequence length, padding policy, batch size and update count instead of treating equal record counts as sufficient evidence of equal compute.
 
+## Implemented Step 3 optimisation boundary
+
+The current confirmatory contract is:
+
+```text
+base model: distilbert/distilbert-base-uncased
+model revision: resolved to an immutable commit during preparation
+trained regimes: 6
+outer folds: 10
+training jobs: 60
+precision: FP32
+maximum sequence length: 256
+padding: fixed max_length
+batch size: 16
+optimizer updates per job: 600
+padded encoder token positions per job: 2,457,600
+checkpoint: final update 600
+source-task early stopping: forbidden
+```
+
+This matches encoder input positions and update opportunities. It does not claim exact total FLOPs because the masked-language-model head is larger than the binary heads.
+
+The Step 3 result remains **Implemented**, not Verified, until the immutable model snapshot and real six-regime smoke artifacts are recorded.
+
 ## Frozen source identities
 
 ```text
@@ -117,7 +143,7 @@ This means NewsEdits can test whether authentic revision-choice supervision beat
 
 ## Representation experiment steps
 
-The executable extension is documented under [`docs/experiments/`](experiments/README.md). Steps 1 and 2 are verified. Step 3 trains all six additional encoders under one frozen optimisation contract.
+The executable extension is documented under [`docs/experiments/`](experiments/README.md). Steps 1 and 2 are verified. Step 3 is implemented and awaits its immutable model snapshot and real smoke run.
 
 ## Publication rule
 
