@@ -8,7 +8,7 @@ function Get-RepositoryRoot {
 }
 
 function Get-ProjectPython {
-    $venvPython = Join-Path $script:RepositoryRoot ".venv\Scripts\python.exe"
+    $venvPython = Join-Path $script:RepositoryRoot "venv\Scripts\python.exe"
     if (Test-Path -LiteralPath $venvPython) {
         return $venvPython
     }

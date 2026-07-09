@@ -7,7 +7,7 @@ param(
 . "$PSScriptRoot\_common.ps1"
 
 $repositoryRoot = Get-RepositoryRoot
-$venvPath = Join-Path $repositoryRoot ".venv"
+$venvPath = Join-Path $repositoryRoot "venv"
 $venvPython = Join-Path $venvPath "Scripts\python.exe"
 
 Push-Location $repositoryRoot
