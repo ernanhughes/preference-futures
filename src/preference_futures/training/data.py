@@ -9,6 +9,23 @@ from typing import Any
 
 from preference_futures.training.common import load_jsonl
 
+EPISODE_ALLOW_LIST = (
+    "episode_id",
+    "lineage_id",
+    "candidate_a",
+    "candidate_b",
+    "context_before",
+    "context_after",
+)
+TEMPORAL_ALLOW_LIST = (
+    "temporal_pair_id",
+    "lineage_id",
+    "earlier_text",
+    "later_text",
+    "context_before",
+    "context_after",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SourceStore:
@@ -31,8 +48,22 @@ class MaskedLanguageExample:
 
 
 def load_source_store(episodes_path: Path, temporal_pairs_path: Path) -> SourceStore:
-    episodes = _index_records(load_jsonl(episodes_path), "episode_id")
-    temporal_pairs = _index_records(load_jsonl(temporal_pairs_path), "temporal_pair_id")
+    """Load only fields allowed during source-task training.
+
+    The original episode artifact contains the later outcome. This projection removes every
+    non-allow-listed field before a training example can be constructed.
+    """
+
+    episodes = _index_projected_records(
+        load_jsonl(episodes_path),
+        key="episode_id",
+        allowed=EPISODE_ALLOW_LIST,
+    )
+    temporal_pairs = _index_projected_records(
+        load_jsonl(temporal_pairs_path),
+        key="temporal_pair_id",
+        allowed=TEMPORAL_ALLOW_LIST,
+    )
     return SourceStore(episodes=episodes, temporal_pairs=temporal_pairs)
 
 
@@ -162,13 +193,23 @@ def sequential_validation_batches(record_count: int, *, batch_size: int) -> list
     ]
 
 
-def _index_records(records: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
+def _index_projected_records(
+    records: list[dict[str, Any]], *, key: str, allowed: tuple[str, ...]
+) -> dict[str, dict[str, Any]]:
     indexed: dict[str, dict[str, Any]] = {}
     for record in records:
         identifier = str(record.get(key, ""))
         if not identifier or identifier in indexed:
             raise ValueError(f"missing or duplicate {key}: {identifier!r}")
-        indexed[identifier] = record
+        missing = [field for field in allowed if field not in record and field not in {
+            "context_before",
+            "context_after",
+        }]
+        if missing:
+            raise ValueError(f"source {identifier} is missing allowed fields: {missing}")
+        indexed[identifier] = {
+            field: record.get(field, "") for field in allowed
+        }
     if not indexed:
         raise ValueError(f"source contains no records keyed by {key}")
     return indexed
