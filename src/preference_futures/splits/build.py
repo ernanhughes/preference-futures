@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +47,17 @@ class FoldAccumulator:
         self.number_dominant += lineage.number_dominant
         self.casualty_count += lineage.casualty_count
 
+    def projected(self, lineage: LineageStats | None = None) -> dict[str, int]:
+        return {
+            "lineages": self.lineages + (1 if lineage else 0),
+            "episodes": self.episodes + (lineage.episodes if lineage else 0),
+            "future_revised": self.future_revised + (lineage.future_revised if lineage else 0),
+            "selected_b": self.selected_b + (lineage.selected_b if lineage else 0),
+            "number_changed": self.number_changed + (lineage.number_changed if lineage else 0),
+            "number_dominant": self.number_dominant + (lineage.number_dominant if lineage else 0),
+            "casualty_count": self.casualty_count + (lineage.casualty_count if lineage else 0),
+        }
+
 
 def load_numeric_flags(path: Path) -> dict[str, dict[str, Any]]:
     """Load numeric shortcut flags keyed by episode ID."""
@@ -79,16 +89,11 @@ def build_grouped_split_manifest(
     episodes_path: Path | None = None,
     numeric_flags_path: Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Build outer folds with test fold ``i`` and validation fold ``i+1``.
+    """Build deterministic lineage-grouped outer folds.
 
-    Each article lineage is assigned to exactly one outer bucket. For fold ``i``:
-
-    - test lineages are bucket ``i``;
-    - validation lineages are bucket ``(i + 1) % folds``;
-    - every remaining lineage is training data.
-
-    With ten folds this creates an 80/10/10 train/validation/test structure while
-    ensuring every lineage is test exactly once and validation exactly once.
+    Test uses bucket ``i``; validation uses bucket ``(i + 1) % folds``; every
+    remaining bucket is training data. Ten folds therefore produce 80/10/10
+    partitions while testing and validating every lineage exactly once.
     """
 
     if folds < 3:
@@ -108,17 +113,9 @@ def build_grouped_split_manifest(
         folds=folds,
         seed=seed,
     )
-
     totals = _summarise_lineages(tuple(lineage_stats.values()))
-    outer_summaries = [
-        {
-            "fold": fold_document["fold"],
-            "path": f"fold-{fold_document['fold']:02d}.json",
-            "partitions": fold_document["partitions"],
-        }
-        for fold_document in fold_documents
-    ]
-    gates = _build_gates(totals, fold_documents, folds=folds)
+    diagnostics = _balance_diagnostics(totals, fold_documents, folds=folds)
+    gates = _build_gates(diagnostics)
 
     manifest = {
         "split_manifest_schema_version": SPLIT_MANIFEST_SCHEMA_VERSION,
@@ -141,9 +138,17 @@ def build_grouped_split_manifest(
         },
         "totals": totals,
         "lineage_to_outer_fold": dict(sorted(assignments.items())),
-        "folds": outer_summaries,
+        "folds": [
+            {
+                "fold": document["fold"],
+                "path": f"fold-{int(document['fold']):02d}.json",
+                "partitions": document["partitions"],
+            }
+            for document in fold_documents
+        ],
+        "balance_diagnostics": diagnostics,
         "gates": gates,
-        "warnings": _build_warnings(totals, fold_documents),
+        "warnings": _build_warnings(totals, diagnostics),
     }
     return manifest, fold_documents
 
@@ -153,30 +158,34 @@ def write_grouped_split_artifacts(
     manifest: Mapping[str, Any],
     fold_documents: Sequence[Mapping[str, Any]],
 ) -> None:
-    """Write one manifest, one file per fold, and human-readable summaries."""
+    """Write one manifest, one file per fold, and compact review summaries."""
 
     output = output_directory.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
-
     (output / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    for fold_document in fold_documents:
-        fold = int(fold_document["fold"])
+    for document in fold_documents:
+        fold = int(document["fold"])
         (output / f"fold-{fold:02d}.json").write_text(
-            json.dumps(fold_document, indent=2, sort_keys=True) + "\n",
+            json.dumps(document, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
 
     summary = {
-        "split_manifest_schema_version": manifest["split_manifest_schema_version"],
-        "seed": manifest["seed"],
-        "outer_folds": manifest["outer_folds"],
-        "totals": manifest["totals"],
-        "folds": manifest["folds"],
-        "gates": manifest["gates"],
-        "warnings": manifest["warnings"],
+        key: manifest[key]
+        for key in (
+            "split_manifest_schema_version",
+            "seed",
+            "outer_folds",
+            "sources",
+            "totals",
+            "folds",
+            "balance_diagnostics",
+            "gates",
+            "warnings",
+        )
     }
     (output / "split-summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
@@ -192,6 +201,7 @@ def render_split_summary_markdown(manifest: Mapping[str, Any]) -> str:
     """Render fold balance and leakage gates for review and publication."""
 
     totals = manifest["totals"]
+    diagnostics = manifest["balance_diagnostics"]
     lines = [
         "# Grouped Split Manifest",
         "",
@@ -207,6 +217,15 @@ def render_split_summary_markdown(manifest: Mapping[str, Any]) -> str:
         f"| Number-changed rate | {totals['number_changed_rate']:.4f} |",
         f"| Number-dominant rate | {totals['number_dominant_rate']:.4f} |",
         f"| Casualty-count rate | {totals['casualty_count_rate']:.4f} |",
+        "",
+        "## Maximum outer test-fold deviations",
+        "",
+        "| Measure | Absolute deviation |",
+        "|---|---:|",
+        f"| Episode share from expected | {diagnostics['max_test_episode_share_deviation']:.6f} |",
+        f"| Lineage share from expected | {diagnostics['max_test_lineage_share_deviation']:.6f} |",
+        f"| Future-revision rate from global | {diagnostics['max_test_future_rate_deviation']:.6f} |",
+        f"| Numerical-change rate from global | {diagnostics['max_test_numeric_rate_deviation']:.6f} |",
         "",
         "## Outer test-fold balance",
         "",
@@ -226,34 +245,24 @@ def render_split_summary_markdown(manifest: Mapping[str, Any]) -> str:
             )
         )
 
-    lines.extend(
-        [
-            "",
-            "## Gates",
-            "",
-            "| Gate | Result |",
-            "|---|---|",
-        ]
-    )
+    lines.extend(["", "## Gates", "", "| Gate | Result |", "|---|---|"])
     lines.extend(
         f"| {name.replace('_', ' ')} | {'PASS' if passed else 'FAIL'} |"
         for name, passed in manifest["gates"].items()
     )
     lines.extend(["", "## Warnings", ""])
     warnings = manifest.get("warnings", [])
-    if warnings:
-        lines.extend(f"- {warning}" for warning in warnings)
-    else:
+    lines.extend(f"- {warning}" for warning in warnings)
+    if not warnings:
         lines.append("- None.")
-
     lines.extend(
         [
             "",
             "## Experimental consequence",
             "",
-            "All downstream encoder training, future-head training, calibration, model selection,",
-            "bootstrapping and ablation analysis must consume these lineage assignments rather than",
-            "creating new row-level splits.",
+            "All encoder training, future-head training, calibration, model selection,",
+            "bootstrapping and ablation analysis must consume these lineage assignments.",
+            "No downstream stage may create a new row-level split.",
             "",
         ]
     )
@@ -272,7 +281,7 @@ def _validate_episode_records(records: Sequence[Mapping[str, Any]]) -> None:
         seen_episode_ids.add(episode_id)
         if type(record.get("future_revised")) is not bool:
             raise TypeError(f"episode {episode_id} future_revised must be bool")
-        if record.get("selected_index") not in (0, 1):
+        if type(record.get("selected_index")) is not int or record["selected_index"] not in (0, 1):
             raise ValueError(f"episode {episode_id} selected_index must be 0 or 1")
 
 
@@ -299,35 +308,36 @@ def _build_lineage_stats(
     for record in records:
         grouped[str(record["lineage_id"])].append(record)
 
-    result: dict[str, LineageStats] = {}
+    stats: dict[str, LineageStats] = {}
     for lineage_id, lineage_records in grouped.items():
-        result[lineage_id] = LineageStats(
+        stats[lineage_id] = LineageStats(
             lineage_id=lineage_id,
             episodes=len(lineage_records),
             future_revised=sum(bool(record["future_revised"]) for record in lineage_records),
             selected_b=sum(int(record["selected_index"]) == 1 for record in lineage_records),
-            number_changed=sum(
-                bool(numeric_flags.get(str(record["episode_id"]), {}).get("number_changed"))
-                for record in lineage_records
+            number_changed=_flag_count(lineage_records, numeric_flags, "number_changed"),
+            number_dominant=_flag_count(
+                lineage_records,
+                numeric_flags,
+                "number_dominant_edit",
             ),
-            number_dominant=sum(
-                bool(
-                    numeric_flags.get(str(record["episode_id"]), {}).get(
-                        "number_dominant_edit"
-                    )
-                )
-                for record in lineage_records
-            ),
-            casualty_count=sum(
-                bool(
-                    numeric_flags.get(str(record["episode_id"]), {}).get(
-                        "casualty_count_update"
-                    )
-                )
-                for record in lineage_records
+            casualty_count=_flag_count(
+                lineage_records,
+                numeric_flags,
+                "casualty_count_update",
             ),
         )
-    return result
+    return stats
+
+
+def _flag_count(
+    records: Sequence[Mapping[str, Any]],
+    numeric_flags: Mapping[str, Mapping[str, Any]],
+    flag: str,
+) -> int:
+    return sum(
+        bool(numeric_flags.get(str(record["episode_id"]), {}).get(flag)) for record in records
+    )
 
 
 def _assign_lineages(
@@ -338,13 +348,16 @@ def _assign_lineages(
 ) -> dict[str, int]:
     totals = _summarise_lineages(tuple(lineage_stats.values()))
     targets = {
-        "lineages": totals["lineages"] / folds,
-        "episodes": totals["episodes"] / folds,
-        "future_revised": totals["future_revised"] / folds,
-        "selected_b": totals["selected_b"] / folds,
-        "number_changed": totals["number_changed"] / folds,
-        "number_dominant": totals["number_dominant"] / folds,
-        "casualty_count": totals["casualty_count"] / folds,
+        field: totals[field] / folds
+        for field in (
+            "lineages",
+            "episodes",
+            "future_revised",
+            "selected_b",
+            "number_changed",
+            "number_dominant",
+            "casualty_count",
+        )
     }
     global_rate = totals["future_revised_rate"]
     ordered = sorted(
@@ -365,10 +378,11 @@ def _assign_lineages(
         )
         selected_fold = min(
             candidate_folds,
-            key=lambda fold: _projected_balance_score(
-                accumulators[fold],
-                lineage,
-                targets,
+            key=lambda fold: _global_projected_score(
+                accumulators,
+                candidate_fold=fold,
+                lineage=lineage,
+                targets=targets,
             ),
         )
         accumulators[selected_fold].add(lineage)
@@ -376,20 +390,13 @@ def _assign_lineages(
     return assignments
 
 
-def _projected_balance_score(
-    accumulator: FoldAccumulator,
+def _global_projected_score(
+    accumulators: Sequence[FoldAccumulator],
+    *,
+    candidate_fold: int,
     lineage: LineageStats,
     targets: Mapping[str, float],
 ) -> float:
-    projected = {
-        "lineages": accumulator.lineages + 1,
-        "episodes": accumulator.episodes + lineage.episodes,
-        "future_revised": accumulator.future_revised + lineage.future_revised,
-        "selected_b": accumulator.selected_b + lineage.selected_b,
-        "number_changed": accumulator.number_changed + lineage.number_changed,
-        "number_dominant": accumulator.number_dominant + lineage.number_dominant,
-        "casualty_count": accumulator.casualty_count + lineage.casualty_count,
-    }
     weights = {
         "lineages": 0.35,
         "episodes": 1.0,
@@ -400,9 +407,11 @@ def _projected_balance_score(
         "casualty_count": 0.10,
     }
     score = 0.0
-    for field, weight in weights.items():
-        target = max(targets[field], 1.0)
-        score += weight * ((projected[field] - target) / target) ** 2
+    for fold, accumulator in enumerate(accumulators):
+        values = accumulator.projected(lineage if fold == candidate_fold else None)
+        for field, weight in weights.items():
+            target = max(targets[field], 1.0)
+            score += weight * ((values[field] - target) / target) ** 2
     return score
 
 
@@ -414,42 +423,29 @@ def _build_fold_documents(
     seed: int,
 ) -> list[dict[str, Any]]:
     all_lineages = set(lineage_stats)
-    documents = []
+    documents: list[dict[str, Any]] = []
     for fold in range(folds):
-        test_lineages = {
-            lineage_id for lineage_id, assigned_fold in assignments.items() if assigned_fold == fold
+        test = {lineage for lineage, bucket in assignments.items() if bucket == fold}
+        validation_bucket = (fold + 1) % folds
+        validation = {
+            lineage for lineage, bucket in assignments.items() if bucket == validation_bucket
         }
-        validation_fold = (fold + 1) % folds
-        validation_lineages = {
-            lineage_id
-            for lineage_id, assigned_fold in assignments.items()
-            if assigned_fold == validation_fold
-        }
-        train_lineages = all_lineages.difference(test_lineages, validation_lineages)
-        _assert_disjoint_complete(
-            all_lineages,
-            train_lineages,
-            validation_lineages,
-            test_lineages,
-        )
+        train = all_lineages.difference(test, validation)
+        _assert_disjoint_complete(all_lineages, train, validation, test)
         documents.append(
             {
                 "split_manifest_schema_version": SPLIT_MANIFEST_SCHEMA_VERSION,
                 "fold": fold,
                 "seed": seed,
                 "test_outer_fold": fold,
-                "validation_outer_fold": validation_fold,
-                "train_lineages": sorted(train_lineages),
-                "validation_lineages": sorted(validation_lineages),
-                "test_lineages": sorted(test_lineages),
+                "validation_outer_fold": validation_bucket,
+                "train_lineages": sorted(train),
+                "validation_lineages": sorted(validation),
+                "test_lineages": sorted(test),
                 "partitions": {
-                    "train": _partition_summary(train_lineages, lineage_stats, len(all_lineages)),
-                    "validation": _partition_summary(
-                        validation_lineages,
-                        lineage_stats,
-                        len(all_lineages),
-                    ),
-                    "test": _partition_summary(test_lineages, lineage_stats, len(all_lineages)),
+                    "train": _partition_summary(train, lineage_stats),
+                    "validation": _partition_summary(validation, lineage_stats),
+                    "test": _partition_summary(test, lineage_stats),
                 },
             }
         )
@@ -459,12 +455,12 @@ def _build_fold_documents(
 def _partition_summary(
     lineages: set[str],
     lineage_stats: Mapping[str, LineageStats],
-    total_lineages: int,
 ) -> dict[str, Any]:
-    selected = tuple(lineage_stats[lineage_id] for lineage_id in lineages)
+    selected = tuple(lineage_stats[lineage] for lineage in lineages)
     summary = _summarise_lineages(selected)
-    total_episodes = sum(lineage.episodes for lineage in lineage_stats.values())
-    summary["lineage_share"] = len(lineages) / total_lineages
+    all_stats = tuple(lineage_stats.values())
+    total_episodes = sum(lineage.episodes for lineage in all_stats)
+    summary["lineage_share"] = len(lineages) / len(lineage_stats)
     summary["episode_share"] = summary["episodes"] / total_episodes
     return summary
 
@@ -505,56 +501,68 @@ def _assert_disjoint_complete(
         raise AssertionError("partition union does not cover every lineage")
 
 
-def _build_gates(
+def _balance_diagnostics(
     totals: Mapping[str, Any],
     fold_documents: Sequence[Mapping[str, Any]],
     *,
     folds: int,
-) -> dict[str, bool]:
+) -> dict[str, Any]:
     expected_share = 1 / folds
-    test_partitions = [fold["partitions"]["test"] for fold in fold_documents]
-    validation_partitions = [fold["partitions"]["validation"] for fold in fold_documents]
-    assignments_tested_once = sum(partition["lineages"] for partition in test_partitions) == totals[
-        "lineages"
-    ]
-    assignments_validated_once = sum(
-        partition["lineages"] for partition in validation_partitions
-    ) == totals["lineages"]
-    max_episode_share_deviation = max(
-        abs(partition["episode_share"] - expected_share) for partition in test_partitions
-    )
-    max_lineage_share_deviation = max(
-        abs(partition["lineage_share"] - expected_share) for partition in test_partitions
-    )
-    max_target_rate_deviation = max(
-        abs(partition["future_revised_rate"] - totals["future_revised_rate"])
-        for partition in test_partitions
-    )
-    max_numeric_rate_deviation = max(
-        abs(partition["number_changed_rate"] - totals["number_changed_rate"])
-        for partition in test_partitions
-    )
+    tests = [document["partitions"]["test"] for document in fold_documents]
+    validations = [document["partitions"]["validation"] for document in fold_documents]
     return {
-        "all_lineages_tested_exactly_once": assignments_tested_once,
-        "all_lineages_validated_exactly_once": assignments_validated_once,
-        "test_episode_share_within_2_points": max_episode_share_deviation <= 0.02,
-        "test_lineage_share_within_2_points": max_lineage_share_deviation <= 0.02,
-        "test_future_rate_within_3_points": max_target_rate_deviation <= 0.03,
-        "test_numeric_change_rate_within_3_points": max_numeric_rate_deviation <= 0.03,
+        "test_lineage_assignments": sum(partition["lineages"] for partition in tests),
+        "validation_lineage_assignments": sum(
+            partition["lineages"] for partition in validations
+        ),
+        "max_test_episode_share_deviation": max(
+            abs(partition["episode_share"] - expected_share) for partition in tests
+        ),
+        "max_test_lineage_share_deviation": max(
+            abs(partition["lineage_share"] - expected_share) for partition in tests
+        ),
+        "max_test_future_rate_deviation": max(
+            abs(partition["future_revised_rate"] - totals["future_revised_rate"])
+            for partition in tests
+        ),
+        "max_test_numeric_rate_deviation": max(
+            abs(partition["number_changed_rate"] - totals["number_changed_rate"])
+            for partition in tests
+        ),
+    }
+
+
+def _build_gates(diagnostics: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        "all_lineages_tested_exactly_once": (
+            diagnostics["test_lineage_assignments"]
+            == diagnostics["validation_lineage_assignments"]
+        ),
+        "all_lineages_validated_exactly_once": (
+            diagnostics["validation_lineage_assignments"]
+            == diagnostics["test_lineage_assignments"]
+        ),
+        "test_episode_share_within_2_points": (
+            diagnostics["max_test_episode_share_deviation"] <= 0.02
+        ),
+        "test_lineage_share_within_2_points": (
+            diagnostics["max_test_lineage_share_deviation"] <= 0.02
+        ),
+        "test_future_rate_within_3_points": (
+            diagnostics["max_test_future_rate_deviation"] <= 0.03
+        ),
+        "test_numeric_change_rate_within_3_points": (
+            diagnostics["max_test_numeric_rate_deviation"] <= 0.03
+        ),
     }
 
 
 def _build_warnings(
     totals: Mapping[str, Any],
-    fold_documents: Sequence[Mapping[str, Any]],
+    diagnostics: Mapping[str, Any],
 ) -> list[str]:
-    warnings = []
-    test_partitions = [fold["partitions"]["test"] for fold in fold_documents]
-    max_target_rate_deviation = max(
-        abs(partition["future_revised_rate"] - totals["future_revised_rate"])
-        for partition in test_partitions
-    )
-    if max_target_rate_deviation >= 0.015:
+    warnings: list[str] = []
+    if diagnostics["max_test_future_rate_deviation"] >= 0.015:
         warnings.append(
             "At least one outer test fold differs from the global future-revision rate by 1.5 "
             "percentage points or more; retain paired fold-level reporting."
@@ -564,8 +572,8 @@ def _build_warnings(
             "No numeric flags were supplied; numeric shortcut balance was not actively stratified."
         )
     warnings.append(
-        "Do not tune split assignments after observing model outcomes; regenerate only for a "
-        "preregistered sensitivity analysis with a different seed."
+        "Do not tune assignments after observing model outcomes; other seeds are sensitivity "
+        "analyses, not opportunities to select a favourable result."
     )
     return warnings
 
