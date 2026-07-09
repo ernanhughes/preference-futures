@@ -6,6 +6,7 @@ Research code for testing whether preference-specific learning transfers to pred
 
 - [Executable blog draft](docs/blog/what-does-a-preference-know-about-the-future.md)
 - [Research claim ledger](docs/CLAIMS.md)
+- [Representation experiment steps](docs/experiments/README.md)
 - [PowerShell workflow index](scripts/README.md)
 
 The publication rule is simple: every sentence beginning with “we found” must map to a committed script and output artifact. Representation-transfer claims remain hypotheses until the grouped control experiment is implemented and run.
@@ -108,6 +109,21 @@ The context audit freezes descriptive checks for target balance, candidate orien
 
 The numeric audit identifies changed values, number-only edits, number-dominant edits, date/update changes, money and percentages, sports values, casualty-count changes and repeated numeric trajectories. These flags become mandatory controls in the later transfer experiment.
 
+## Step 1: freeze grouped evaluation splits
+
+Before model training, build deterministic article-lineage grouped folds:
+
+```powershell
+.\scripts\40-build-grouped-splits.ps1 `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -NumericFlagsPath artifacts\newsedits\viability-5000\numeric-flags.jsonl `
+  -OutputDirectory artifacts\transfer\splits `
+  -Folds 10 `
+  -Seed 17
+```
+
+The policy uses one outer bucket for test, the next bucket for validation and the remaining eight buckets for training. Every lineage is test exactly once and validation exactly once. See [Step 1](docs/experiments/01-grouped-split-manifests.md) for the pass criteria and the results section completed after the real-data run.
+
 ## Repository sequence
 
 ```text
@@ -118,10 +134,11 @@ The numeric audit identifies changed values, number-only edits, number-dominant 
 5. Context viability audit          implemented
 6. Numeric shortcut audit           implemented
 7. Executable blog and claim ledger implemented
-8. Grouped split manifests          next
-9. Preference-task baselines
-10. Frozen representation transfer
-11. Sample-efficiency controls
+8. Grouped split manifests          implemented; awaiting real-data run
+9. Compute-matched training corpora next
+10. Preference and control training
+11. Frozen representation transfer
+12. Sample-efficiency controls
 ```
 
 ## Development
