@@ -14,7 +14,9 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | `12-newsedits-full.ps1` | Extract the requested full or bounded production dataset. |
 | `13-newsedits-verify.ps1` | Stream-validate JSONL episodes against the extraction audit. |
 | `14-context-viability-audit.ps1` | Audit class balance, contexts, lineage concentration, artifacts and pair reversals. |
+| `15-numeric-shortcut-audit.ps1` | Measure numerical-update prevalence, future risk and repeated numeric trajectories. |
 | `20-current-smoke-pipeline.ps1` | Run checks, inspect the database, extract a smoke sample, and verify it. |
+| `30-reproduce-blog-evidence.ps1` | Run the complete extraction, context and numeric evidence chain used by the blog. |
 | `_common.ps1` | Shared internal helpers; do not run directly. |
 
 ## First-time setup
@@ -121,5 +123,40 @@ artifacts/newsedits/viability-5000/context-viability.md
 ```
 
 The audit records target balance, candidate-order balance, lineage concentration, context availability, residual source-boundary artifacts, boilerplate flags, exact candidate-pair reversals, similarity bands, sentence-position bands and V1-version bands. A nonzero exit code means at least one frozen viability gate failed.
+
+## Audit numerical shortcuts
+
+```powershell
+.\scripts\15-numeric-shortcut-audit.ps1 `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -OutputDirectory artifacts\newsedits\viability-5000
+```
+
+This writes:
+
+```text
+artifacts/newsedits/viability-5000/numeric-shortcut.json
+artifacts/newsedits/viability-5000/numeric-shortcut.md
+artifacts/newsedits/viability-5000/numeric-flags.jsonl
+```
+
+The flags identify changed numbers, number-only edits, number-dominant edits, date/update changes, money and percentages, sports values, casualty-count changes and repeated numeric trajectories.
+
+## Reproduce the blog evidence
+
+The publication-facing command starts from the official NewsEdits database and runs repository checks, extraction, verification and both audits:
+
+```powershell
+.\scripts\30-reproduce-blog-evidence.ps1 `
+  -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db"
+```
+
+By default it reproduces the deterministic 5,000-article, seed-17 viability run under:
+
+```text
+artifacts/newsedits/blog-evidence/
+```
+
+The accompanying evidence map is in [`docs/CLAIMS.md`](../docs/CLAIMS.md), and the executable blog draft is in [`docs/blog/what-does-a-preference-know-about-the-future.md`](../docs/blog/what-does-a-preference-know-about-the-future.md).
 
 All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as split manifests, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
