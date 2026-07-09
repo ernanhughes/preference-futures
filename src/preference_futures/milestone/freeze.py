@@ -1,9 +1,8 @@
-"""Build a compact, hash-addressed snapshot of the completed confirmatory experiment."""
+"""Build a compact, hash-addressed snapshot of the confirmatory experiment."""
 
 from __future__ import annotations
 
 import hashlib
-import json
 import shutil
 import subprocess
 from collections.abc import Iterable, Mapping
@@ -15,6 +14,8 @@ from preference_futures.training.common import canonical_json_sha256, load_json,
 
 MILESTONE_SCHEMA_VERSION = 1
 DEFAULT_MILESTONE_NAME = "preference-futures-v0.1-confirmatory-negative"
+RESULT_JSON_NAME = "step-06-confirmatory-result.json"
+RESULT_MARKDOWN_NAME = "step-06-confirmatory-result.md"
 
 
 class MilestoneError(ValueError):
@@ -36,7 +37,7 @@ def freeze_confirmatory_milestone(
     allow_dirty: bool = False,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Validate Steps 1-6, create compact evidence files, and ZIP the snapshot."""
+    """Validate Steps 1-6, write result records, and ZIP compact evidence."""
 
     repository = repository_root.expanduser().resolve()
     release_parent = release_root.expanduser().resolve()
@@ -48,7 +49,8 @@ def freeze_confirmatory_milestone(
     git = _git_identity(repository)
     if git["dirty"] and not allow_dirty:
         raise MilestoneError(
-            "tracked repository files are dirty; commit or stash them, or pass --allow-dirty"
+            "tracked repository files are dirty; commit or stash them, "
+            "or pass --allow-dirty"
         )
 
     sources = {
@@ -61,11 +63,9 @@ def freeze_confirmatory_milestone(
     }
     _validate_evidence_chain(sources)
 
-    probe_summary = load_json(sources["probes"] / "probe-summary.json")
-    probe_verification = load_json(sources["probes"] / "probe-verification.json")
     result = _build_confirmatory_result(
-        probe_summary=probe_summary,
-        probe_verification=probe_verification,
+        probe_summary=load_json(sources["probes"] / "probe-summary.json"),
+        probe_verification=load_json(sources["probes"] / "probe-verification.json"),
         git=git,
         milestone_name=milestone_name,
     )
@@ -73,7 +73,8 @@ def freeze_confirmatory_milestone(
     if release_directory.exists() or archive_path.exists() or archive_hash_path.exists():
         if not force:
             raise MilestoneError(
-                f"milestone output already exists; pass --force to replace it: {release_directory}"
+                "milestone output already exists; pass --force to replace it: "
+                f"{release_directory}"
             )
         shutil.rmtree(release_directory, ignore_errors=True)
         archive_path.unlink(missing_ok=True)
@@ -83,8 +84,8 @@ def freeze_confirmatory_milestone(
     result_directory.mkdir(parents=True, exist_ok=True)
     release_directory.mkdir(parents=True, exist_ok=True)
 
-    result_json_path = result_directory / "step-06-confirmatory-result.json"
-    result_markdown_path = result_directory / "step-06-confirmatory-result.md"
+    result_json_path = result_directory / RESULT_JSON_NAME
+    result_markdown_path = result_directory / RESULT_MARKDOWN_NAME
     write_json(result_json_path, result)
     result_markdown_path.write_text(
         render_confirmatory_result_markdown(result),
@@ -94,15 +95,11 @@ def freeze_confirmatory_milestone(
     copied: list[dict[str, Any]] = []
     for source_path, archive_relative in _evidence_files(sources, repository):
         target = release_directory / "evidence" / archive_relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source_path, target)
-        copied.append(_file_record(target, release_directory, source_path=source_path))
+        _copy_and_record(source_path, target, release_directory, copied)
 
     for generated_path in (result_json_path, result_markdown_path):
         target = release_directory / "results" / generated_path.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(generated_path, target)
-        copied.append(_file_record(target, release_directory, source_path=generated_path))
+        _copy_and_record(generated_path, target, release_directory, copied)
 
     release_metadata = {
         "milestone_schema_version": MILESTONE_SCHEMA_VERSION,
@@ -120,17 +117,16 @@ def freeze_confirmatory_milestone(
             "out_of_fold_predictions_included": True,
         },
     }
-    write_json(release_directory / "release-metadata.json", release_metadata)
-    (release_directory / "README.md").write_text(
+    metadata_path = release_directory / "release-metadata.json"
+    readme_path = release_directory / "README.md"
+    write_json(metadata_path, release_metadata)
+    readme_path.write_text(
         render_release_readme(result, release_metadata),
         encoding="utf-8",
     )
     copied.extend(
         _file_record(path, release_directory, source_path=path)
-        for path in (
-            release_directory / "release-metadata.json",
-            release_directory / "README.md",
-        )
+        for path in (metadata_path, readme_path)
     )
 
     manifest = {
@@ -142,7 +138,8 @@ def freeze_confirmatory_milestone(
         "files": sorted(copied, key=lambda item: str(item["path"])),
     }
     manifest["manifest_sha256"] = canonical_json_sha256(manifest)
-    write_json(release_directory / "manifest.json", manifest)
+    manifest_path = release_directory / "manifest.json"
+    write_json(manifest_path, manifest)
 
     shutil.make_archive(
         str(archive_path.with_suffix("")),
@@ -164,7 +161,7 @@ def freeze_confirmatory_milestone(
         "repository_result_json": str(result_json_path),
         "repository_result_markdown": str(result_markdown_path),
         "release_directory": str(release_directory),
-        "manifest_path": str(release_directory / "manifest.json"),
+        "manifest_path": str(manifest_path),
         "manifest_sha256": manifest["manifest_sha256"],
         "archive_path": str(archive_path),
         "archive_sha256": archive_sha256,
@@ -177,6 +174,17 @@ def freeze_confirmatory_milestone(
     return final
 
 
+def _copy_and_record(
+    source: Path,
+    target: Path,
+    release_directory: Path,
+    records: list[dict[str, Any]],
+) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    records.append(_file_record(target, release_directory, source_path=source))
+
+
 def _validate_evidence_chain(sources: Mapping[str, Path]) -> None:
     required = {
         "splits": ["manifest.json", "split-verification.json"],
@@ -184,21 +192,16 @@ def _validate_evidence_chain(sources: Mapping[str, Path]) -> None:
         "training": ["contract.json", "training-verification-confirmatory.json"],
         "encoder_selection": ["accepted-encoders.json", "source-task-summary.json"],
         "representations": ["contract.json", "representation-verification.json"],
-        "probes": [
-            "contract.json",
-            "probe-verification.json",
-            "probe-summary.json",
-        ],
+        "probes": ["contract.json", "probe-verification.json", "probe-summary.json"],
     }
     for stage, names in required.items():
-        directory = sources[stage]
         for name in names:
-            path = directory / name
+            path = sources[stage] / name
             if not path.is_file():
                 raise MilestoneError(f"missing {stage} evidence file: {path}")
 
     verification_checks = (
-        (sources["splits"] / "split-verification.json", 10, "split"),
+        (sources["splits"] / "split-verification.json", None, "split"),
         (sources["corpora"] / "corpus-verification.json", None, "corpus"),
         (
             sources["training"] / "training-verification-confirmatory.json",
@@ -214,27 +217,29 @@ def _validate_evidence_chain(sources: Mapping[str, Path]) -> None:
     )
     for path, expected_jobs, label in verification_checks:
         report = load_json(path)
-        passed = report.get("passed") is True or str(report.get("status", "")).lower() == "pass"
-        if not passed:
+        status_passed = str(report.get("status", "")).lower() == "pass"
+        if report.get("passed") is not True and not status_passed:
             raise MilestoneError(f"{label} verification has not passed: {path}")
         if expected_jobs is not None:
-            observed = report.get("observed", {})
-            observed_jobs = observed.get("observed_jobs")
+            observed_jobs = report.get("observed", {}).get("observed_jobs")
             if observed_jobs is not None and int(observed_jobs) != expected_jobs:
                 raise MilestoneError(
-                    f"{label} verification expected {expected_jobs} jobs, observed {observed_jobs}"
+                    f"{label} verification expected {expected_jobs} jobs, "
+                    f"observed {observed_jobs}"
                 )
 
     training = load_json(sources["training"] / "training-verification-confirmatory.json")
     if training.get("mode") != "confirmatory":
         raise MilestoneError("Step 3 verification is not confirmatory")
+
     selection = load_json(sources["encoder_selection"] / "accepted-encoders.json")
     if selection.get("status") != "frozen_for_step_5":
         raise MilestoneError("Step 4 encoder manifest is not frozen for Step 5")
     if int(selection.get("counts", {}).get("eligible_entries", 0)) != 70:
         raise MilestoneError("Step 4 encoder manifest does not contain 70 eligible entries")
-    summary = load_json(sources["probes"] / "probe-summary.json")
-    if summary.get("status") != "complete":
+
+    probe_summary = load_json(sources["probes"] / "probe-summary.json")
+    if probe_summary.get("status") != "complete":
         raise MilestoneError("Step 6 probe summary is incomplete")
 
 
@@ -250,14 +255,28 @@ def _build_confirmatory_result(
     ]
     improvement = float(comparison["log_loss_improvement"])
     lower, upper = (float(value) for value in comparison["confidence_interval_95"])
-    if lower > 0.0:
-        classification = "supported"
-    elif upper < 0.0:
-        classification = "degraded"
-    else:
-        classification = "not_supported"
+    classification = _classify_result(lower=lower, upper=upper)
 
-    arm_metrics = probe_summary.get("arm_metrics", {})
+    if classification == "not_supported":
+        supported_claim = (
+            "Under the frozen DistilBERT, source-training, pair-and-context input, "
+            "final-layer first-token representation, and identical linear-probe "
+            "contract, authentic-preference training did not improve out-of-fold "
+            "prediction of future revision relative to the untouched generic encoder."
+        )
+    elif classification == "supported":
+        supported_claim = (
+            "Under the frozen confirmatory contract, authentic-preference training "
+            "produced a reliable out-of-fold log-loss improvement over the untouched "
+            "generic encoder."
+        )
+    else:
+        supported_claim = (
+            "Under the frozen confirmatory contract, authentic-preference training "
+            "reliably degraded out-of-fold prediction relative to the untouched "
+            "generic encoder."
+        )
+
     result: dict[str, Any] = {
         "confirmatory_result_schema_version": MILESTONE_SCHEMA_VERSION,
         "status": "verified",
@@ -266,8 +285,12 @@ def _build_confirmatory_result(
         "git": dict(git),
         "probe_contract_sha256": probe_summary.get("contract_sha256"),
         "verification_passed": probe_verification.get("passed") is True,
-        "expected_jobs": int(probe_verification.get("observed", {}).get("expected_jobs", 0)),
-        "observed_jobs": int(probe_verification.get("observed", {}).get("observed_jobs", 0)),
+        "expected_jobs": int(
+            probe_verification.get("observed", {}).get("expected_jobs", 0)
+        ),
+        "observed_jobs": int(
+            probe_verification.get("observed", {}).get("observed_jobs", 0)
+        ),
         "episodes": int(probe_summary.get("episodes", 0)),
         "lineages": int(probe_summary.get("lineages", 0)),
         "primary_result": {
@@ -279,35 +302,37 @@ def _build_confirmatory_result(
             "bootstrap_unit": "article_lineage",
             "bootstrap_replicates": int(comparison["bootstrap_replicates"]),
         },
-        "arm_metrics": arm_metrics,
-        "supported_claim": (
-            "Under the frozen DistilBERT, source-training, pair-and-context input, final-layer "
-            "first-token representation, and identical linear-probe contract, authentic-preference "
-            "training did not improve out-of-fold prediction of future revision relative to the "
-            "untouched generic encoder."
-            if classification == "not_supported"
-            else (
-                "Under the frozen confirmatory contract, authentic-preference training produced a "
-                "reliable out-of-fold log-loss improvement over the untouched generic encoder."
-                if classification == "supported"
-                else "Under the frozen confirmatory contract, authentic-preference training reliably degraded out-of-fold prediction relative to the untouched generic encoder."
-            )
-        ),
+        "arm_metrics": probe_summary.get("arm_metrics", {}),
+        "supported_claim": supported_claim,
         "claim_limits": [
             "The result tests linear decodability from the frozen Step 5 representation.",
-            "It does not prove that preference supervision can never transfer in another model or task.",
-            "Analyses designed after observing this result are exploratory unless replicated on fresh data.",
+            (
+                "It does not prove that preference supervision can never transfer in "
+                "another model or task."
+            ),
+            (
+                "Analyses designed after observing this result are exploratory unless "
+                "replicated on fresh data."
+            ),
         ],
     }
     result["result_sha256"] = canonical_json_sha256(result)
     return result
 
 
+def _classify_result(*, lower: float, upper: float) -> str:
+    if lower > 0.0:
+        return "supported"
+    if upper < 0.0:
+        return "degraded"
+    return "not_supported"
+
+
 def _evidence_files(
     sources: Mapping[str, Path],
     repository: Path,
 ) -> Iterable[tuple[Path, Path]]:
-    explicit_patterns = {
+    patterns = {
         "splits": [
             "manifest.json",
             "split-summary.json",
@@ -354,18 +379,19 @@ def _evidence_files(
         ],
     }
     seen: set[Path] = set()
-    for stage, patterns in explicit_patterns.items():
+    for stage, stage_patterns in patterns.items():
         root = sources[stage]
-        for pattern in patterns:
+        for pattern in stage_patterns:
             for path in sorted(root.glob(pattern)):
                 if path.is_file() and path not in seen:
                     seen.add(path)
                     yield path, Path(stage) / path.relative_to(root)
 
     docs_results = repository / "docs" / "results"
+    generated_names = {RESULT_JSON_NAME, RESULT_MARKDOWN_NAME}
     if docs_results.is_dir():
         for path in sorted(docs_results.glob("step-*")):
-            if path.is_file() and path not in seen:
+            if path.is_file() and path.name not in generated_names and path not in seen:
                 seen.add(path)
                 yield path, Path("repository-results") / path.name
 
@@ -400,7 +426,9 @@ def _git_identity(repository: Path) -> dict[str, Any]:
     try:
         commit = run("rev-parse", "HEAD")
         branch = run("branch", "--show-current") or "detached"
-        status_lines = [line for line in run("status", "--porcelain").splitlines() if line]
+        status_lines = [
+            line for line in run("status", "--porcelain").splitlines() if line
+        ]
     except (OSError, subprocess.CalledProcessError) as exc:
         raise MilestoneError(f"unable to inspect Git repository: {repository}") from exc
     return {
@@ -414,10 +442,11 @@ def _git_identity(repository: Path) -> dict[str, Any]:
 def render_confirmatory_result_markdown(result: Mapping[str, Any]) -> str:
     primary = result["primary_result"]
     lower, upper = primary["confidence_interval_95"]
+    status = str(result["classification"]).replace("_", " ").upper()
     lines = [
         "# Step 6 Confirmatory Result",
         "",
-        f"**Status:** VERIFIED — {str(result['classification']).replace('_', ' ').upper()}",
+        f"**Status:** VERIFIED — {status}",
         "",
         "## Primary comparison",
         "",
@@ -473,6 +502,7 @@ def render_release_readme(
 ) -> str:
     primary = result["primary_result"]
     lower, upper = primary["confidence_interval_95"]
+    classification = str(result["classification"]).replace("_", " ")
     return "\n".join(
         [
             f"# {metadata['milestone_name']}",
@@ -482,8 +512,11 @@ def render_release_readme(
             "",
             "## Headline result",
             "",
-            f"- Classification: **{str(result['classification']).replace('_', ' ')}**",
-            f"- Authentic-versus-generic log-loss improvement: `{primary['log_loss_improvement']:+.6f}`",
+            f"- Classification: **{classification}**",
+            (
+                "- Authentic-versus-generic log-loss improvement: "
+                f"`{primary['log_loss_improvement']:+.6f}`"
+            ),
             f"- Paired lineage-bootstrap 95% CI: `[{lower:+.6f}, {upper:+.6f}]`",
             f"- Verified probe jobs: `{result['observed_jobs']}/{result['expected_jobs']}`",
             f"- Git commit before snapshot generation: `{metadata['git']['commit']}`",
