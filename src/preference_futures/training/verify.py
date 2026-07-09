@@ -14,6 +14,7 @@ from preference_futures.training.common import (
     parse_int_selection,
     parse_regime_selection,
     sha256_directory,
+    sha256_file,
     write_json,
 )
 from preference_futures.training.contract import validate_training_contract
@@ -37,16 +38,23 @@ def verify_training_runs(
         checks["training_contract_is_valid"] = False
         errors.append(str(exc))
 
-    selected_folds = parse_int_selection(folds, upper_bound=int(contract["outer_folds"]))
+    selected_folds = parse_int_selection(
+        folds,
+        upper_bound=int(contract["outer_folds"]),
+    )
     selected_regimes = parse_regime_selection(regimes)
     root = training / ("smoke-runs" if smoke else "runs")
-    expected_steps = None if smoke else int(contract["optimisation"]["update_steps"])
+    contract_optimisation = contract["optimisation"]
+    expected_steps = None if smoke else int(contract_optimisation["update_steps"])
     expected_jobs = len(selected_folds) * len(selected_regimes)
     observed_jobs = 0
     reports: list[dict[str, Any]] = []
     artifact_hashes_match = True
     contract_hashes_match = True
+    run_statuses_complete = True
+    mode_flags_match = True
     step_budgets_match = True
+    runtime_settings_match = True
     padded_budgets_match = True
     checkpoint_rules_match = True
     no_early_stopping = True
@@ -54,6 +62,7 @@ def verify_training_runs(
     initial_snapshots_match = True
     metrics_are_finite = True
     device_types: set[str] = set()
+    environment_signatures: set[tuple[str, ...]] = set()
     fold_budgets: dict[int, dict[str, tuple[int, int]]] = defaultdict(dict)
 
     for fold in selected_folds:
@@ -72,9 +81,12 @@ def verify_training_runs(
             reports.append(report)
             if report.get("fold") != fold or report.get("regime") != regime:
                 errors.append(f"run identity disagrees with path: {report_path}")
+            run_statuses_complete = run_statuses_complete and report.get("status") == "complete"
+            mode_flags_match = mode_flags_match and report.get("non_confirmatory") is smoke
             contract_hashes_match = contract_hashes_match and (
                 report.get("contract_sha256") == contract.get("contract_sha256")
             )
+
             optimisation = report.get("optimisation", {})
             steps = optimisation.get("optimizer_steps_completed")
             padded = optimisation.get("padded_token_positions")
@@ -82,10 +94,15 @@ def verify_training_runs(
                 step_budgets_match = False
             if expected_steps is not None and steps != expected_steps:
                 step_budgets_match = False
+            runtime_settings_match = runtime_settings_match and _runtime_settings_match(
+                optimisation,
+                contract_optimisation,
+                steps=steps,
+            )
             expected_padded = (
                 int(steps)
-                * int(contract["optimisation"]["batch_size"])
-                * int(contract["optimisation"]["maximum_sequence_length"])
+                * int(contract_optimisation["batch_size"])
+                * int(contract_optimisation["maximum_sequence_length"])
                 if isinstance(steps, int)
                 else None
             )
@@ -103,17 +120,17 @@ def verify_training_runs(
                 report.get("model", {}).get("initial_encoder_snapshot_sha256")
                 == contract.get("model", {}).get("base_snapshot_sha256")
             )
+
             environment = report.get("environment", {})
             device_value = str(environment.get("device", ""))
             if device_value:
                 device_types.add(device_value.split(":", maxsplit=1)[0])
+            environment_signatures.add(_environment_signature(environment))
 
             job = _find_job(contract, fold, regime)
-            source_files = report.get("source_files", {})
-            source_hashes_match = source_hashes_match and (
-                source_files.get("train_sha256") == job["train"]["sha256"]
-                and source_files.get("validation_sha256")
-                == job["validation"]["sha256"]
+            source_hashes_match = source_hashes_match and _job_sources_match(
+                report,
+                job,
             )
             validation = report.get("validation", {})
             for key in ("mean_loss", "accuracy"):
@@ -133,16 +150,20 @@ def verify_training_runs(
                 artifact_hashes_match = False
 
     checks["all_expected_runs_exist"] = observed_jobs == expected_jobs
+    checks["all_run_statuses_are_complete"] = run_statuses_complete
+    checks["smoke_and_confirmatory_modes_are_separated"] = mode_flags_match
     checks["run_contract_hashes_match"] = contract_hashes_match
-    checks["source_corpus_hashes_match"] = source_hashes_match
+    checks["current_source_corpus_hashes_match"] = source_hashes_match
     checks["initial_encoder_snapshot_matches"] = initial_snapshots_match
     checks["optimizer_update_budgets_match"] = step_budgets_match
+    checks["runtime_batch_length_and_precision_match"] = runtime_settings_match
     checks["padded_token_budgets_match"] = padded_budgets_match
     checks["fixed_final_checkpoint_rule_used"] = checkpoint_rules_match
     checks["no_task_specific_early_stopping"] = no_early_stopping
     checks["persisted_artifact_hashes_match"] = artifact_hashes_match
     checks["validation_metrics_are_finite"] = metrics_are_finite
     checks["one_device_type_used"] = len(device_types) <= 1
+    checks["one_runtime_environment_used"] = len(environment_signatures) <= 1
     checks["within_fold_regime_budgets_are_equal"] = _fold_budgets_equal(
         fold_budgets,
         selected_folds=selected_folds,
@@ -153,7 +174,7 @@ def verify_training_runs(
         if not passed:
             errors.append(name.replace("_", " "))
     passed = bool(checks) and all(checks.values()) and not errors
-    report = {
+    return {
         "training_verification_schema_version": TRAINING_VERIFICATION_SCHEMA_VERSION,
         "passed": passed,
         "mode": "smoke" if smoke else "confirmatory",
@@ -166,6 +187,7 @@ def verify_training_runs(
             "expected_jobs": expected_jobs,
             "observed_jobs": observed_jobs,
             "device_types": sorted(device_types),
+            "runtime_environment_count": len(environment_signatures),
             "run_reports_read": len(reports),
         },
         "checks": checks,
@@ -184,7 +206,6 @@ def verify_training_runs(
             for item in reports
         ],
     }
-    return report
 
 
 def write_training_verification(training_directory: Path, report: Mapping[str, Any]) -> None:
@@ -192,7 +213,8 @@ def write_training_verification(training_directory: Path, report: Mapping[str, A
     suffix = "smoke" if report.get("mode") == "smoke" else "confirmatory"
     write_json(training / f"training-verification-{suffix}.json", report)
     (training / f"training-verification-{suffix}.md").write_text(
-        render_training_verification_markdown(report), encoding="utf-8"
+        render_training_verification_markdown(report),
+        encoding="utf-8",
     )
 
 
@@ -212,6 +234,7 @@ def render_training_verification_markdown(report: Mapping[str, Any]) -> str:
         f"| Observed jobs | {observed['observed_jobs']:,} |",
         f"| Run reports read | {observed['run_reports_read']:,} |",
         f"| Device types | {', '.join(observed['device_types']) or 'none'} |",
+        f"| Runtime environments | {observed['runtime_environment_count']:,} |",
         "",
         "## Checks",
         "",
@@ -236,6 +259,56 @@ def _find_job(contract: Mapping[str, Any], fold: int, regime: str) -> Mapping[st
         if job.get("fold") == fold and job.get("regime") == regime:
             return job
     raise ValueError(f"contract has no job for fold {fold} regime {regime}")
+
+
+def _job_sources_match(report: Mapping[str, Any], job: Mapping[str, Any]) -> bool:
+    source_files = report.get("source_files", {})
+    train = job["train"]
+    validation = job["validation"]
+    try:
+        current_train_hash = sha256_file(Path(str(train["path"])))
+        current_validation_hash = sha256_file(Path(str(validation["path"])))
+    except (OSError, ValueError):
+        return False
+    return (
+        source_files.get("train_sha256") == train["sha256"] == current_train_hash
+        and source_files.get("validation_sha256")
+        == validation["sha256"]
+        == current_validation_hash
+    )
+
+
+def _runtime_settings_match(
+    optimisation: Mapping[str, Any],
+    contract_optimisation: Mapping[str, Any],
+    *,
+    steps: Any,
+) -> bool:
+    if not isinstance(steps, int) or isinstance(steps, bool):
+        return False
+    batch_size = contract_optimisation["batch_size"]
+    max_length = contract_optimisation["maximum_sequence_length"]
+    return (
+        optimisation.get("batch_size") == batch_size
+        and optimisation.get("maximum_sequence_length") == max_length
+        and optimisation.get("precision") == contract_optimisation["precision"]
+        and optimisation.get("examples_seen") == steps * int(batch_size)
+    )
+
+
+def _environment_signature(environment: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        str(environment.get(name, ""))
+        for name in (
+            "python",
+            "platform",
+            "torch",
+            "transformers",
+            "device",
+            "device_name",
+            "cuda_version",
+        )
+    )
 
 
 def _fold_budgets_equal(
