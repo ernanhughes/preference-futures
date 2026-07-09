@@ -1,0 +1,417 @@
+{
+  "arm_metrics": {
+    "authentic_preference": {
+      "accuracy": 0.7637690776376908,
+      "brier_score": 0.177918189145233,
+      "fold_log_losses": [
+        {
+          "fold": 0,
+          "log_loss": 0.5234226826853694
+        },
+        {
+          "fold": 1,
+          "log_loss": 0.526400880974
+        },
+        {
+          "fold": 2,
+          "log_loss": 0.5593364290853773
+        },
+        {
+          "fold": 3,
+          "log_loss": 0.528934882887505
+        },
+        {
+          "fold": 4,
+          "log_loss": 0.5393190651138058
+        },
+        {
+          "fold": 5,
+          "log_loss": 0.5602912587286815
+        },
+        {
+          "fold": 6,
+          "log_loss": 0.5380497519956073
+        },
+        {
+          "fold": 7,
+          "log_loss": 0.547988896208228
+        },
+        {
+          "fold": 8,
+          "log_loss": 0.5443951930192509
+        },
+        {
+          "fold": 9,
+          "log_loss": 0.5401537421202607
+        }
+      ],
+      "folds_beating_generic": 3,
+      "log_loss": 0.5408323115373427,
+      "log_loss_improvement_vs_generic": -0.0007191244926727514,
+      "mean_probability": 0.2561072304456445,
+      "positives": 3104,
+      "prevalence": 0.25746516257465163,
+      "records": 12056,
+      "roc_auc": 0.6283646479678561
+    },
+    "generic": {
+      "accuracy": 0.7646814863968149,
+      "brier_score": 0.17765907771130246,
+      "fold_log_losses": [
+        {
+          "fold": 0,
+          "log_loss": 0.5252719178734692
+        },
+        {
+          "fold": 1,
+          "log_loss": 0.5335406164682406
+        },
+        {
+          "fold": 2,
+          "log_loss": 0.5506967681706997
+        },
+        {
+          "fold": 3,
+          "log_loss": 0.5278442851121384
+        },
+        {
+          "fold": 4,
+          "log_loss": 0.5385091265804488
+        },
+        {
+          "fold": 5,
+          "log_loss": 0.559062605717327
+        },
+        {
+          "fold": 6,
+          "log_loss": 0.5361785795030389
+        },
+        {
+          "fold": 7,
+          "log_loss": 0.5421589872571589
+        },
+        {
+          "fold": 8,
+          "log_loss": 0.5524952091975879
+        },
+        {
+          "fold": 9,
+          "log_loss": 0.5353398462600493
+        }
+      ],
+      "folds_beating_generic": null,
+      "log_loss": 0.5401131870446699,
+      "log_loss_improvement_vs_generic": 0.0,
+      "mean_probability": 0.2551398812204552,
+      "positives": 3104,
+      "prevalence": 0.25746516257465163,
+      "records": 12056,
+      "roc_auc": 0.6301186331396313
+    },
+    "language_adaptation": {
+      "accuracy": 0.7675016589250165,
+      "brier_score": 0.1767825430661064,
+      "fold_log_losses": [
+        {
+          "fold": 0,
+          "log_loss": 0.525559224264449
+        },
+        {
+          "fold": 1,
+          "log_loss": 0.5210930232317833
+        },
+        {
+          "fold": 2,
+          "log_loss": 0.5518634684004928
+        },
+        {
+          "fold": 3,
+          "log_loss": 0.5282205038459777
+        },
+        {
+          "fold": 4,
+          "log_loss": 0.5406431387003693
+        },
+        {
+          "fold": 5,
+          "log_loss": 0.5429425589007658
+        },
+        {
+          "fold": 6,
+          "log_loss": 0.5493940059861897
+        },
+        {
+          "fold": 7,
+          "log_loss": 0.5380612144157619
+        },
+        {
+          "fold": 8,
+          "log_loss": 0.5545869113472982
+        },
+        {
+          "fold": 9,
+          "log_loss": 0.5296385870009486
+        }
+      ],
+      "folds_beating_generic": 4,
+      "log_loss": 0.5382006383589563,
+      "log_loss_improvement_vs_generic": 0.0019125486857136664,
+      "mean_probability": 0.25583352213577126,
+      "positives": 3104,
+      "prevalence": 0.25746516257465163,
+      "records": 12056,
+      "roc_auc": 0.6305406289154989
+    },
+    "pair_exposure": {
+      "accuracy": 0.7660915726609158,
+      "brier_score": 0.17626423159672963,
+      "fold_log_losses": [
+        {
+          "fold": 0,
+          "log_loss": 0.534487644112539
+        },
+        {
+          "fold": 1,
+          "log_loss": 0.5195121596150163
+        },
+        {
+          "fold": 2,
+          "log_loss": 0.5561182165908345
+        },
+        {
+          "fold": 3,
+          "log_loss": 0.52179162374427
+        },
+        {
+          "fold": 4,
+          "log_loss": 0.534306855510701
+        },
+        {
+          "fold": 5,
+          "log_loss": 0.5506407482388069
+        },
+        {
+          "fold": 6,
+          "log_loss": 0.5358626044281646
+        },
+        {
+          "fold": 7,
+          "log_loss": 0.5429884474567815
+        },
+        {
+          "fold": 8,
+          "log_loss": 0.5430739791878603
+        },
+        {
+          "fold": 9,
+          "log_loss": 0.5288970569577652
+        }
+      ],
+      "folds_beating_generic": 7,
+      "log_loss": 0.5367684020250524,
+      "log_loss_improvement_vs_generic": 0.0033447850196175466,
+      "mean_probability": 0.2561467266863264,
+      "positives": 3104,
+      "prevalence": 0.25746516257465163,
+      "records": 12056,
+      "roc_auc": 0.6331839505714325
+    },
+    "random_label": {
+      "accuracy": 0.7591240875912408,
+      "brier_score": 0.17988331070825145,
+      "fold_log_losses": [
+        {
+          "fold": 0,
+          "log_loss": 0.5353801137980443
+        },
+        {
+          "fold": 1,
+          "log_loss": 0.5333842368041614
+        },
+        {
+          "fold": 2,
+          "log_loss": 0.5654723960538106
+        },
+        {
+          "fold": 3,
+          "log_loss": 0.5357387905363418
+        },
+        {
+          "fold": 4,
+          "log_loss": 0.5427718552524623
+        },
+        {
+          "fold": 5,
+          "log_loss": 0.5637299855380369
+        },
+        {
+          "fold": 6,
+          "log_loss": 0.5472733575706382
+        },
+        {
+          "fold": 7,
+          "log_loss": 0.5413335543886686
+        },
+        {
+          "fold": 8,
+          "log_loss": 0.5587476489196714
+        },
+        {
+          "fold": 9,
+          "log_loss": 0.5361563201898794
+        }
+      ],
+      "folds_beating_generic": 2,
+      "log_loss": 0.546000554115977,
+      "log_loss_improvement_vs_generic": -0.005887367071307104,
+      "mean_probability": 0.25503803221297194,
+      "positives": 3104,
+      "prevalence": 0.25746516257465163,
+      "records": 12056,
+      "roc_auc": 0.622487764785615
+    },
+    "shuffled_preference": {
+      "accuracy": 0.757879893828799,
+      "brier_score": 0.18000642700195055,
+      "fold_log_losses": [
+        {
+          "fold": 0,
+          "log_loss": 0.5327890500019304
+        },
+        {
+          "fold": 1,
+          "log_loss": 0.5313968423932842
+        },
+        {
+          "fold": 2,
+          "log_loss": 0.5727118161597838
+        },
+        {
+          "fold": 3,
+          "log_loss": 0.5332011304720806
+        },
+        {
+          "fold": 4,
+          "log_loss": 0.5545469536760722
+        },
+        {
+          "fold": 5,
+          "log_loss": 0.5469254212760709
+        },
+        {
+          "fold": 6,
+          "log_loss": 0.5472507220914771
+        },
+        {
+          "fold": 7,
+          "log_loss": 0.5345944000629663
+        },
+        {
+          "fold": 8,
+          "log_loss": 0.5644938801634686
+        },
+        {
+          "fold": 9,
+          "log_loss": 0.5425165447493558
+        }
+      ],
+      "folds_beating_generic": 3,
+      "log_loss": 0.546043919522079,
+      "log_loss_improvement_vs_generic": -0.005930732477409051,
+      "mean_probability": 0.2542541870560284,
+      "positives": 3104,
+      "prevalence": 0.25746516257465163,
+      "records": 12056,
+      "roc_auc": 0.6236087562935887
+    },
+    "temporal_direction": {
+      "accuracy": 0.7587923025879231,
+      "brier_score": 0.18105170532594309,
+      "fold_log_losses": [
+        {
+          "fold": 0,
+          "log_loss": 0.5368448873179527
+        },
+        {
+          "fold": 1,
+          "log_loss": 0.5408219067492279
+        },
+        {
+          "fold": 2,
+          "log_loss": 0.579529479247983
+        },
+        {
+          "fold": 3,
+          "log_loss": 0.5466577376390883
+        },
+        {
+          "fold": 4,
+          "log_loss": 0.5485386909259399
+        },
+        {
+          "fold": 5,
+          "log_loss": 0.5540132287408354
+        },
+        {
+          "fold": 6,
+          "log_loss": 0.5424134150279326
+        },
+        {
+          "fold": 7,
+          "log_loss": 0.5503355426264752
+        },
+        {
+          "fold": 8,
+          "log_loss": 0.5544039950110258
+        },
+        {
+          "fold": 9,
+          "log_loss": 0.5360213673589111
+        }
+      ],
+      "folds_beating_generic": 1,
+      "log_loss": 0.5489601281160289,
+      "log_loss_improvement_vs_generic": -0.008846941071358971,
+      "mean_probability": 0.25460014832759176,
+      "positives": 3104,
+      "prevalence": 0.25746516257465163,
+      "records": 12056,
+      "roc_auc": 0.6130576023154418
+    }
+  },
+  "claim_limits": [
+    "The result tests linear decodability from the frozen Step 5 representation.",
+    "It does not prove that preference supervision can never transfer in another model or task.",
+    "Analyses designed after observing this result are exploratory unless replicated on fresh data."
+  ],
+  "classification": "not_supported",
+  "confirmatory_result_schema_version": 1,
+  "episodes": 12056,
+  "expected_jobs": 70,
+  "git": {
+    "branch": "main",
+    "commit": "96d6dac735a49c6dcb24b391922d384e4269b611",
+    "dirty": false,
+    "dirty_entries": []
+  },
+  "lineages": 3386,
+  "milestone_name": "preference-futures-v0.1-confirmatory-negative",
+  "observed_jobs": 70,
+  "primary_result": {
+    "bootstrap_replicates": 10000,
+    "bootstrap_unit": "article_lineage",
+    "comparison": "authentic_preference_vs_generic",
+    "confidence_interval_95": [
+      -0.0034249014875998352,
+      0.002019786062965282
+    ],
+    "estimand": "generic_log_loss_minus_authentic_preference_log_loss",
+    "log_loss_improvement": -0.0007191244926723376,
+    "positive_value_favors": "authentic_preference"
+  },
+  "probe_contract_sha256": "385b466678492140116efa4c13eaf9ce86ef08641f781a944c88e9f6e31b4938",
+  "result_sha256": "699a99646c4b532f3de5e7709e4e0f1066e1d11f98cff146632b20ea33bfa237",
+  "status": "verified",
+  "supported_claim": "Under the frozen DistilBERT, source-training, pair-and-context input, final-layer first-token representation, and identical linear-probe contract, authentic-preference training did not improve out-of-fold prediction of future revision relative to the untouched generic encoder.",
+  "verification_passed": true
+}
