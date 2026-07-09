@@ -3,7 +3,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$DatabasePath,
 
-    [string]$Table = ""
+    [string]$Table = "",
+    [string]$SplitTable = ""
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -14,6 +15,9 @@ $arguments = @("-m", "preference_futures.newsedits", "inspect", "--db", $databas
 
 if (-not [string]::IsNullOrWhiteSpace($Table)) {
     $arguments += @("--table", $Table)
+}
+if (-not [string]::IsNullOrWhiteSpace($SplitTable)) {
+    $arguments += @("--split-table", $SplitTable)
 }
 
 Invoke-CheckedCommand -FilePath $python -ArgumentList $arguments
