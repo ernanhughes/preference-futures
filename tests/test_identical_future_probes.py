@@ -58,6 +58,23 @@ def test_lineage_bootstrap_uses_paired_loss_difference() -> None:
     assert result["probability_improvement_positive"] == 1.0
 
 
+def test_rejects_incomplete_step5_verification() -> None:
+    representation_contract = {
+        "outer_folds": 2,
+        "expected_extraction_jobs": 14,
+    }
+    with pytest.raises(ValueError, match="has not passed"):
+        contract_module._require_complete_representation_verification(
+            {
+                "passed": False,
+                "status": "fail",
+                "selection": {"folds": [0, 1], "arms": list(ALL_ARMS)},
+                "observed": {"expected_jobs": 14, "observed_jobs": 13},
+            },
+            representation_contract,
+        )
+
+
 def test_builds_identical_probe_contract_from_complete_step5(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
