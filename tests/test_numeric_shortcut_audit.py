@@ -94,10 +94,12 @@ def test_report_marks_repeated_numeric_trajectory_and_complement_rate() -> None:
     assert changed["future_revised"] == 2
     assert changed["future_revised_rate"] == 2 / 3
     assert changed["future_revised_rate_without_category"] == 0.0
+    assert changed["risk_ratio_vs_complement"] is None
     assert report["trajectories"]["repeated_numeric_lineages"] == 1
     assert report["trajectories"]["repeated_casualty_lineages"] == 1
     assert sum(item["repeated_numeric_trajectory"] for item in flags) == 2
     assert sum(item["repeated_casualty_trajectory"] for item in flags) == 2
+    assert any("risk ratio is undefined" in item for item in report["interpretation"])
 
     markdown = render_numeric_shortcut_markdown(report)
     assert "# Numeric Shortcut Audit" in markdown
