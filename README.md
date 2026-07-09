@@ -133,6 +133,31 @@ numeric-change rate:  0.0697 percentage points
 
 The assignments, source hashes and compact result are frozen in [Step 1](docs/experiments/01-grouped-split-manifests.md) and [`docs/results/step-01-grouped-splits.json`](docs/results/step-01-grouped-splits.json).
 
+## Step 2: compute-matched training corpora
+
+Build deterministic source-task corpora from the frozen split boundary:
+
+```powershell
+.\scripts\50-build-training-corpora.ps1 `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -SplitManifestPath artifacts\transfer\splits\manifest.json `
+  -OutputDirectory artifacts\transfer\corpora `
+  -Seed 17
+```
+
+The builder emits six corpora with the same row population, fold partitions and serialized input text:
+
+```text
+authentic_preference
+language_modeling_control
+pair_exposure_control
+temporal_direction_control
+random_label_control
+shuffled_preference_control
+```
+
+It refuses to run if the episode JSONL hash differs from the Step 1 manifest. Future labels are excluded from corpus JSONL records and retained only in the corpus manifest summary.
+
 ## Repository sequence
 
 ```text
@@ -144,8 +169,8 @@ The assignments, source hashes and compact result are frozen in [Step 1](docs/ex
 6. Numeric shortcut audit           verified
 7. Executable blog and claim ledger implemented
 8. Grouped split manifests          verified and frozen
-9. Compute-matched training corpora next
-10. Preference and control training
+9. Compute-matched training corpora implemented; awaiting local run
+10. Preference and control training next
 11. Frozen representation transfer
 12. Sample-efficiency controls
 ```
