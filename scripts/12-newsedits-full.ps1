@@ -52,7 +52,12 @@ if (-not [string]::IsNullOrWhiteSpace($Sources)) {
 Invoke-CheckedCommand -FilePath $python -ArgumentList $arguments
 
 if (-not $SkipVerification) {
-    & "$PSScriptRoot\13-newsedits-verify.ps1" -EpisodesPath $episodesPath -AuditPath $auditPath
+    Invoke-CheckedScript `
+        -ScriptPath "$PSScriptRoot\13-newsedits-verify.ps1" `
+        -Parameters @{
+            EpisodesPath = $episodesPath
+            AuditPath = $auditPath
+        }
 }
 
 Write-Host "Full extraction complete: $output" -ForegroundColor Green
