@@ -17,8 +17,8 @@ This directory extends the blog into an executable sequence. Each step contains:
 | 2 | [Build compute-matched source corpora](02-compute-matched-corpora.md) | **Verified: 120 files / 651,024 persisted records** |
 | 3 | [Train six representations under one fixed budget](03-fixed-budget-representation-training.md) | **Verified: 60/60 confirmatory jobs passed** |
 | 4 | [Diagnose source tasks and freeze encoders](04-source-task-diagnostics-and-encoder-freeze.md) | **Verified: 70/70 entries eligible** |
-| 5 | [Extract frozen representations](05-frozen-representation-extraction.md) | **Implemented; local contract and extraction next** |
-| 6 | Train identical future probes | Planned |
+| 5 | [Extract frozen representations](05-frozen-representation-extraction.md) | **Verified: 70/70 jobs and 210 matrices passed** |
+| 6 | [Train identical future probes](06-identical-future-probes.md) | **Implemented; local contract and full run next** |
 | 7 | Run metadata and numeric-only baselines | Planned |
 | 8 | Run numerical, clean-prose and reversal ablations | Planned |
 | 9 | Run future-label sample-efficiency curves | Planned |
@@ -88,8 +88,6 @@ Pair exposure learned strongly. Temporal direction and authentic preference rema
 
 ## Verified Step 4 freeze
 
-Step 4 produced:
-
 ```text
 10 folds
 7 arms per fold
@@ -103,25 +101,40 @@ Mechanically valid preregistered arms remain eligible even when their source cla
 
 The compact records are [`step-04-source-task-diagnostics.json`](../results/step-04-source-task-diagnostics.json) and [`step-04-source-task-diagnostics.md`](../results/step-04-source-task-diagnostics.md).
 
-## Frozen Step 5 boundary
+## Verified Step 5 representation boundary
 
-Step 5 applies every encoder to the same canonical pair-and-context text and extracts one final-layer first-token vector. It uses the frozen tokenizer, maximum length 256, fixed padding, evaluation mode and float32 output.
+Step 5 applied every encoder to the same canonical pair-and-context text and extracted one final-layer first-token vector. It used the frozen tokenizer, maximum length 256, fixed padding, evaluation mode and float32 output.
 
-The encoder receives no selected-index label, future label or V2 field. Row metadata contains only episode ID, lineage ID, row index and an input hash.
-
-A complete run declares:
+The full verifier reported:
 
 ```text
-70 extraction jobs
+70/70 extraction jobs
 210 train/validation/test matrices
 one pooling rule
 one hidden size
 one output dtype
+status PASS
 ```
+
+The encoder received no selected-index label, future label or V2 field. Row metadata contains only episode ID, lineage ID, row index and an input hash.
+
+## Frozen Step 6 decision boundary
+
+Step 6 trains the same one-layer logistic probe for every fold and arm. Feature standardization is fitted on train only. Five L2 values are evaluated with validation log loss, numerical ties favor stronger regularization, and the selected probe is evaluated once on test without retraining or post-hoc calibration.
+
+The primary estimand is:
+
+```text
+generic pooled out-of-fold log loss
+-
+authentic-preference pooled out-of-fold log loss
+```
+
+A positive value favors authentic preference. Uncertainty uses 10,000 paired article-lineage bootstrap replicates with seed 17. Random-label and shuffled-preference arms are the primary specificity checks.
 
 ## Rule
 
-A later step must consume the committed artifacts from the earlier step. It must not silently regenerate splits, labels, shortcut flags, temporal pools, corpus assignments, model snapshots, training contracts, encoder-selection manifests or representation contracts after observing downstream outcomes.
+A later step must consume the committed artifacts from the earlier step. It must not silently regenerate splits, labels, shortcut flags, temporal pools, corpus assignments, model snapshots, training contracts, encoder-selection manifests, representation contracts or probe contracts after observing downstream outcomes.
 
 The publication-facing prose fragments live under:
 

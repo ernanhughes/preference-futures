@@ -25,6 +25,13 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | `61-step3-smoke.ps1` | Run two non-confirmatory updates for all six regimes on fold 0. |
 | `62-train-fixed-budget-representations.ps1` | Run resumable confirmatory Step 3 training. |
 | `63-verify-fixed-budget-training.ps1` | Verify persisted confirmatory model runs and budgets. |
+| `70-freeze-source-task-encoders.ps1` | Diagnose Step 3 and freeze the seven-arm Step 4 manifest. |
+| `80-prepare-frozen-representations.ps1` | Freeze Step 5 input, pooling and matrix contracts. |
+| `81-extract-frozen-representations.ps1` | Extract resumable Step 5 matrices. |
+| `82-verify-frozen-representations.ps1` | Verify all persisted Step 5 matrices and row identities. |
+| `90-prepare-identical-future-probes.ps1` | Freeze Step 6 target, probe and comparison contracts. |
+| `91-train-identical-future-probes.ps1` | Train or resume all identical Step 6 probes. |
+| `92-verify-identical-future-probes.ps1` | Recompute probes, aggregate out-of-fold forecasts and bootstrap comparisons. |
 | `_common.ps1` | Shared internal helpers; do not run directly. |
 
 ## Setup and repository checks
