@@ -35,6 +35,15 @@ if (-not [string]::IsNullOrWhiteSpace($NumericFlagsPath)) {
 
 Invoke-CheckedCommand -FilePath $python -ArgumentList $arguments
 
-Write-Host "Grouped split artifacts written." -ForegroundColor Green
-Write-Host "  Manifest: $(Join-Path $output 'manifest.json')"
-Write-Host "  Summary:  $(Join-Path $output 'split-summary.md')"
+$manifestPath = Join-Path $output "manifest.json"
+Invoke-CheckedScript `
+    -ScriptPath "$PSScriptRoot\41-verify-grouped-splits.ps1" `
+    -Parameters @{
+        ManifestPath = $manifestPath
+        OutputDirectory = $output
+    }
+
+Write-Host "Grouped split artifacts written and independently verified." -ForegroundColor Green
+Write-Host "  Manifest:     $manifestPath"
+Write-Host "  Summary:      $(Join-Path $output 'split-summary.md')"
+Write-Host "  Verification: $(Join-Path $output 'split-verification.md')"
