@@ -7,10 +7,12 @@ jobs:
   debug:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          show-progress: false
-      - name: Install quietly
-        run: python3 -m pip install -q -e ".[dev]"
-      - name: Run first failing test
-        run: pytest -x -q
+      - name: Clone, install and expose first failure
+        env:
+          BRANCH: ${{ github.head_ref }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git clone -q --depth 1 --branch "$BRANCH" "https://github.com/$REPOSITORY.git" repo
+          cd repo
+          python3 -m pip install -q -e ".[dev]"
+          pytest -x -q
