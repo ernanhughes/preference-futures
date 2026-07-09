@@ -1,74 +1,112 @@
-## Step Two: Build the Compute-Matched Training Corpora
+## Step Two: Freeze What Every Encoder Is Allowed to Learn From
 
-A preference-trained representation beating an untouched encoder would not be enough.
+A fair representation experiment cannot begin by training the preferred model and inventing its controls afterward.
 
-It could win simply because it saw more NewsEdits text. Or because it saw revision pairs. Or because it received extra optimisation. Or because it learned which sentence looked newer.
+Before touching an encoder, we materialised six additional-training regimes under the article-grouped boundary frozen in Step One:
 
-So the next repository step freezes the actual source-task corpora before any model training begins.
+```text
+language adaptation
+pair exposure
+temporal direction
+random labels
+shuffled preference
+authentic preference
+```
+
+The untouched pretrained encoder remains a seventh comparison arm.
+
+Each trained regime receives exactly the same number of source-task records inside each fold’s train and validation partitions. None receives the future-revision label. None receives V2. Every preference-derived record remains inside the lineages assigned to that fold’s train or validation partition.
 
 Run:
 
 ```powershell
-.\scripts\50-build-training-corpora.ps1 `
+.\scripts\50-build-compute-matched-corpora.ps1 `
+  -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db" `
   -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
-  -SplitManifestPath artifacts\transfer\splits\manifest.json `
+  -SplitsDirectory artifacts\transfer\splits `
   -OutputDirectory artifacts\transfer\corpora `
   -Seed 17
 ```
 
-The builder refuses to run if the episode JSONL does not match the SHA-256 recorded in the Step 1 split manifest.
+The command writes the corpus manifest, all ten folds, an independent temporal-pair pool and a persisted verification report.
 
-It emits six corpora:
+### The temporal control forced a correction
 
-| Corpus | What it receives | What it predicts |
-|---|---|---|
-| `authentic_preference` | Same pair/context text | Which candidate the editor retained |
-| `language_modeling_control` | Same pair/context text | No pair label |
-| `pair_exposure_control` | Same pair/context text | No selection label |
-| `temporal_direction_control` | Same pair/context text | Which candidate is newer |
-| `random_label_control` | Same pair/context text | A deterministic random label |
-| `shuffled_preference_control` | Same pair/context text | A partition-shuffled preference label |
-
-Every corpus uses the same serialized input shape:
+At first, the obvious temporal control seemed to be:
 
 ```text
-CONTEXT_BEFORE
-CANDIDATE_A
-CANDIDATE_B
-CONTEXT_AFTER
+show the same V0 and V1 pair
+predict which sentence is newer
 ```
 
-This means the controls are matched on:
+But on these episodes that is not a different target.
 
-- article-lineage split;
-- row population;
-- fold and partition membership;
-- serialized input text;
-- whitespace-token input budget.
+```text
+V0 = earlier rejected sentence
+V1 = later retained sentence
+```
 
-They differ only in the source-task supervision.
+After candidate randomisation:
 
-The shuffled-preference corpus preserves the selected-label prevalence within each fold partition while breaking the episode-specific link between text and authentic editorial choice. The random-label corpus preserves the optimization pipeline shape without meaningful supervision. The temporal-direction corpus is the direct control for the claim that the model merely learns which sentence looks newer.
+```text
+retained candidate index
+=
+newer candidate index
+```
 
-Future labels are not written into corpus JSONL records. They remain reserved for the later frozen-representation future probe.
+Training “temporal direction” on the exact authentic pairs would therefore reproduce the authentic labels and then pretend they represented a competing explanation.
+
+The repository refuses that shortcut.
+
+Instead, the temporal-direction encoder is trained on one-to-one replacements from other NewsEdits article lineages that never appear in the preference-future evaluation set. It learns generic revision newness in the same publication domain without seeing any evaluation article trajectory.
+
+That correction narrows what the eventual result can claim. NewsEdits alone cannot fully separate “preference learning” from “learning the semantics of an accepted chronological revision,” because the observed choice and the later sentence are the same event. A positive result must first beat the independent temporal representation and should still be described carefully until it generalises to datasets where preference is not synonymous with chronological replacement.
+
+### The six trained regimes
+
+**Language adaptation** reconstructs deterministic masked words from the same NewsEdits pair-and-context inputs. It controls for domain exposure.
+
+**Pair exposure** predicts whether two candidates came from the same revision episode. Every candidate remains exposed, but authentic preference labels are absent.
+
+**Temporal direction** predicts the newer candidate using external, evaluation-disjoint NewsEdits lineages.
+
+**Random labels** use the authentic pair inputs with deterministic balanced targets unrelated to the decision.
+
+**Shuffled preference** preserves the authentic label count but takes each target from a different article lineage.
+
+**Authentic preference** predicts which candidate the editor retained.
+
+The source-task artifacts are accepted only when:
+
+```text
+all six corpora have identical record counts
+no test lineage enters preference-derived source training
+future and V2 fields are absent
+random and pair-exposure labels are balanced
+negative and shuffled donors cross article lineages
+temporal articles are disjoint from evaluation articles
+all 120 expected corpus files survive persisted verification
+```
 
 ### Result
 
 ```text
-Status:                         PENDING LOCAL RUN
-Episodes:                       PENDING
-Article lineages:               PENDING
-Outer folds:                    10
-Corpora:                        6
-Record-count matching:          PENDING
-Input-token matching:           PENDING
-Future-label redaction:         PENDING
+Status:                             PENDING LOCAL RUN
+Independent temporal pairs:         PENDING
+Independent temporal lineages:      PENDING
+Corpus JSONL files:                 120 expected
+Records per train corpus by fold:   PENDING
+Records per validation corpus:      PENDING
+Builder gates:                      PENDING
+Persisted verification gates:       PENDING
 ```
 
-A passing result proves only this:
+A passing Step Two result proves only this:
 
-> The authentic preference source task and its controls consume the same examples, same article-grouped partitions and same input text, so later representation differences cannot be attributed to unequal corpus construction.
+> The authentic revision-choice objective and five trained alternatives were frozen before model training with equal source-record budgets, no direct future-label leakage and an independent temporal-control pool.
 
-It does not prove that preference learning transfers to future prediction.
+It does not yet prove equal compute. The next step must train every regime from the same checkpoint with the same tokenizer, fixed sequence length, padding policy, optimiser, batch size, learning-rate schedule and number of updates.
 
-It makes the eventual comparison fair enough to run.
+It also does not prove transfer.
+
+It makes the transfer comparison hard enough to be worth believing.

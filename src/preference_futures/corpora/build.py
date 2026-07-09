@@ -1,556 +1,382 @@
-"""Build deterministic compute-matched source-task corpora for transfer experiments."""
+"""Build auditable, fold-locked source-task corpora for representation training."""
 
 from __future__ import annotations
 
-import hashlib
 import json
-from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import Any
 
-TRAINING_CORPUS_SCHEMA_VERSION = 1
-
-PARTITIONS = ("train", "validation", "test")
-CorpusTree: TypeAlias = dict[str, dict[int, dict[str, list[dict[str, Any]]]]]
-
-
-@dataclass(frozen=True, slots=True)
-class CorpusSpec:
-    name: str
-    family: str
-    objective: str
-    label_name: str | None
-    description: str
-
-
-CORPUS_SPECS = (
-    CorpusSpec(
-        name="authentic_preference",
-        family="preference",
-        objective="predict_editor_selected_candidate",
-        label_name="selected_candidate_index",
-        description="Authentic V0/V1 preference supervision.",
-    ),
-    CorpusSpec(
-        name="language_modeling_control",
-        family="control",
-        objective="same_text_exposure_without_pair_label",
-        label_name=None,
-        description="Unlabelled exposure to the same pair/context text.",
-    ),
-    CorpusSpec(
-        name="pair_exposure_control",
-        family="control",
-        objective="same_pair_exposure_without_selection_label",
-        label_name=None,
-        description="Revision-pair exposure without a selection target.",
-    ),
-    CorpusSpec(
-        name="temporal_direction_control",
-        family="control",
-        objective="predict_newer_candidate",
-        label_name="newer_candidate_index",
-        description="Predict which candidate is the later revision.",
-    ),
-    CorpusSpec(
-        name="random_label_control",
-        family="control",
-        objective="predict_deterministic_random_candidate",
-        label_name="random_candidate_index",
-        description="Preference-shaped optimization with random labels.",
-    ),
-    CorpusSpec(
-        name="shuffled_preference_control",
-        family="control",
-        objective="predict_partition_shuffled_preference_label",
-        label_name="shuffled_selected_candidate_index",
-        description="Preference-shaped labels shuffled within partitions.",
-    ),
+from preference_futures.corpora.common import (
+    CORPUS_NAMES,
+    FORBIDDEN_FUTURE_KEYS,
+    assert_partition,
+    load_json,
+    load_jsonl,
+    positive_int,
+    source_metadata,
+    string_set,
+    validate_episodes,
+    validate_temporal_pairs,
+)
+from preference_futures.corpora.controls import (
+    assign_temporal_lineages,
+    build_partition_corpora,
+    record_exposure_tokens,
 )
 
 
-@dataclass(frozen=True, slots=True)
-class AssignedEpisode:
-    record: Mapping[str, Any]
-    fold: int
-    partition: str
-
-
-def build_training_corpora(
-    records: Sequence[Mapping[str, Any]],
+def build_compute_matched_corpora(
+    episodes: Sequence[Mapping[str, Any]],
     split_manifest: Mapping[str, Any],
+    fold_documents: Mapping[int, Mapping[str, Any]],
+    temporal_pairs: Sequence[Mapping[str, Any]],
     *,
+    seed: int = 17,
     episodes_path: Path | None = None,
     split_manifest_path: Path | None = None,
-    seed: int = 17,
-) -> tuple[dict[str, Any], CorpusTree]:
-    """Build in-memory corpus records and a manifest."""
+    temporal_pairs_path: Path | None = None,
+) -> tuple[dict[str, Any], dict[int, dict[str, dict[str, list[dict[str, Any]]]]]]:
+    """Build six source-task corpora with frozen fold membership and record budgets."""
 
-    if not records:
-        raise ValueError("records must not be empty")
+    episode_by_id = validate_episodes(episodes)
+    evaluation_lineages = {str(record["lineage_id"]) for record in episodes}
+    temporal_by_id = validate_temporal_pairs(temporal_pairs, evaluation_lineages)
+    outer_folds = positive_int(split_manifest.get("outer_folds"), "outer_folds")
+    assignments = split_manifest.get("lineage_to_outer_fold")
+    if not isinstance(assignments, Mapping):
+        raise ValueError("split manifest requires lineage_to_outer_fold")
+    if set(map(str, assignments)) != evaluation_lineages:
+        raise ValueError("split manifest lineage assignments do not match episode lineages")
+    if set(fold_documents) != set(range(outer_folds)):
+        raise ValueError("fold documents must cover every outer fold exactly once")
 
-    source_checks = _validate_sources(
-        split_manifest,
-        episodes_path=episodes_path,
-        split_manifest_path=split_manifest_path,
-    )
-    assignments = _lineage_assignments(split_manifest)
-    folds = _outer_folds(split_manifest)
-    assigned = _assign_records(records, assignments=assignments, folds=folds)
-    label_maps = _label_maps(assigned, seed=seed)
+    temporal_assignments = assign_temporal_lineages(temporal_pairs, outer_folds, seed)
+    outputs: dict[int, dict[str, dict[str, list[dict[str, Any]]]]] = {}
+    fold_summaries: list[dict[str, Any]] = []
 
-    corpora: CorpusTree = {}
-    corpus_stats: dict[str, Any] = {}
-    for spec in CORPUS_SPECS:
-        by_fold: dict[int, dict[str, list[dict[str, Any]]]] = {}
-        stats_by_fold: dict[str, Any] = {}
-        for fold in range(folds):
-            by_partition: dict[str, list[dict[str, Any]]] = {}
-            stats_by_partition: dict[str, Any] = {}
-            for partition in PARTITIONS:
-                partition_records = [
-                    item for item in assigned if item.fold == fold and item.partition == partition
-                ]
-                label_map = label_maps.get(spec.name, {}).get((fold, partition), {})
-                output_records = [
-                    _corpus_record(
-                        item.record,
-                        spec=spec,
-                        fold=fold,
-                        partition=partition,
-                        label=label_map.get(str(item.record["episode_id"])),
-                    )
-                    for item in partition_records
-                ]
-                by_partition[partition] = output_records
-                stats_by_partition[partition] = _partition_stats(
-                    output_records,
-                    source_records=[item.record for item in partition_records],
-                )
-            by_fold[fold] = by_partition
-            stats_by_fold[f"fold-{fold:02d}"] = stats_by_partition
-        corpora[spec.name] = by_fold
-        corpus_stats[spec.name] = _corpus_spec_summary(spec, stats_by_fold)
+    for fold in range(outer_folds):
+        document = fold_documents[fold]
+        train_lineages = string_set(document.get("train_lineages"), f"fold {fold} train")
+        validation_lineages = string_set(
+            document.get("validation_lineages"), f"fold {fold} validation"
+        )
+        test_lineages = string_set(document.get("test_lineages"), f"fold {fold} test")
+        assert_partition(train_lineages, validation_lineages, test_lineages, evaluation_lineages)
 
+        train_episodes = [
+            record for record in episodes if str(record["lineage_id"]) in train_lineages
+        ]
+        validation_episodes = [
+            record for record in episodes if str(record["lineage_id"]) in validation_lineages
+        ]
+
+        temporal_validation_bucket = (fold + 1) % outer_folds
+        temporal_test_bucket = fold
+        temporal_train_pool = [
+            record
+            for record in temporal_pairs
+            if temporal_assignments[str(record["lineage_id"])]
+            not in {temporal_test_bucket, temporal_validation_bucket}
+        ]
+        temporal_validation_pool = [
+            record
+            for record in temporal_pairs
+            if temporal_assignments[str(record["lineage_id"])] == temporal_validation_bucket
+        ]
+
+        partitions: dict[str, dict[str, list[dict[str, Any]]]] = {}
+        partition_summaries: dict[str, Any] = {}
+        for partition_name, partition_episodes, temporal_pool in (
+            ("train", train_episodes, temporal_train_pool),
+            ("validation", validation_episodes, temporal_validation_pool),
+        ):
+            corpora = build_partition_corpora(
+                partition_episodes,
+                temporal_pool,
+                seed=seed,
+                fold=fold,
+                partition=partition_name,
+            )
+            partitions[partition_name] = corpora
+            partition_summaries[partition_name] = _summarise_partition(
+                corpora,
+                episode_by_id,
+                temporal_by_id,
+            )
+        outputs[fold] = partitions
+        fold_summaries.append(
+            {
+                "fold": fold,
+                "train_lineages": len(train_lineages),
+                "validation_lineages": len(validation_lineages),
+                "test_lineages": len(test_lineages),
+                "partitions": partition_summaries,
+            }
+        )
+
+    gates = _build_gates(outputs, episode_by_id, temporal_by_id, fold_documents)
     manifest = {
-        "training_corpus_schema_version": TRAINING_CORPUS_SCHEMA_VERSION,
+        "corpus_manifest_schema_version": 1,
         "seed": seed,
-        "outer_folds": folds,
-        "partitions": list(PARTITIONS),
-        "corpus_names": [spec.name for spec in CORPUS_SPECS],
-        "source_checks": source_checks,
+        "outer_folds": outer_folds,
+        "corpora": list(CORPUS_NAMES),
         "sources": {
-            "episodes": _source_metadata(episodes_path),
-            "split_manifest": _source_metadata(split_manifest_path),
+            "episodes": source_metadata(episodes_path),
+            "split_manifest": source_metadata(split_manifest_path),
+            "temporal_pairs": source_metadata(temporal_pairs_path),
         },
-        "split_identity": _split_identity(split_manifest),
-        "totals": _global_totals(records),
-        "corpora": corpus_stats,
+        "dataset": {
+            "episodes": len(episodes),
+            "evaluation_lineages": len(evaluation_lineages),
+            "temporal_pairs": len(temporal_pairs),
+            "temporal_lineages": len({str(row["lineage_id"]) for row in temporal_pairs}),
+        },
+        "temporal_policy": {
+            "evaluation_lineage_overlap_allowed": False,
+            "assignment": "deterministic lineage-grouped balanced outer buckets",
+            "test_bucket": "fold i (unused for source training)",
+            "validation_bucket": "fold (i + 1) mod K",
+            "training_buckets": "all remaining buckets",
+        },
+        "compute_matching_policy": {
+            "source_records_per_partition": "exactly equal across all six trained regimes",
+            "optimizer_steps": "must be identical and fixed in Step 3",
+            "batch_size": "must be identical in Step 3",
+            "maximum_sequence_length": "must be identical in Step 3",
+            "padding": "pad every source-task batch to the same frozen maximum length",
+            "tokenizer": "must be identical and frozen in Step 3",
+            "checkpoint_selection": "fixed update checkpoints; no task-specific early stopping",
+            "note": (
+                "Step 2 matches source-record budgets and records exposure estimates. "
+                "Exact compute matching is enforced by the Step 3 trainer, not inferred from file size."
+            ),
+        },
+        "identification_note": {
+            "exact_pair_temporal_target_equals_authentic_target": True,
+            "reason": (
+                "In a V0-to-V1 revision pair, the editor-retained sentence is also the later "
+                "sentence. Training temporal direction on those exact pairs would duplicate the "
+                "authentic labels rather than provide an independent control."
+            ),
+            "resolution": (
+                "The temporal-direction corpus is therefore drawn from separate NewsEdits article "
+                "lineages that never appear in future evaluation, while pair-exposure and language "
+                "adaptation controls retain the exact evaluation-domain texts."
+            ),
+        },
+        "folds": fold_summaries,
+        "gates": gates,
+        "warnings": [
+            "Future labels and V2 fields are forbidden from every source-task JSONL record.",
+            (
+                "The temporal-direction pool is drawn from article lineages disjoint from "
+                "all future-evaluation lineages."
+            ),
+            "Do not alter corpus assignments after observing downstream future-probe results.",
+        ],
     }
-    manifest["gates"] = _build_gates(manifest)
-    manifest["warnings"] = _build_warnings(manifest)
-    return manifest, corpora
+    if not all(gates.values()):
+        failed = ", ".join(name for name, passed in gates.items() if not passed)
+        raise ValueError(f"compute-matched corpus gates failed: {failed}")
+    return manifest, outputs
 
 
-def write_training_corpora(
+def write_compute_matched_corpora(
     output_directory: Path,
     manifest: Mapping[str, Any],
-    corpora: Mapping[str, Mapping[int, Mapping[str, Sequence[Mapping[str, Any]]]]],
+    outputs: Mapping[int, Mapping[str, Mapping[str, Sequence[Mapping[str, Any]]]]],
 ) -> None:
-    """Write corpus JSONL files and summary artifacts."""
-
     output = output_directory.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
-
-    for corpus_name, by_fold in corpora.items():
-        for fold, by_partition in by_fold.items():
-            fold_dir = output / corpus_name / f"fold-{fold:02d}"
-            fold_dir.mkdir(parents=True, exist_ok=True)
-            for partition, records in by_partition.items():
-                _write_jsonl(fold_dir / f"{partition}.jsonl", records)
-
-    (output / "corpus-manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    (output / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     (output / "corpus-summary.md").write_text(
-        render_training_corpus_markdown(manifest),
-        encoding="utf-8",
+        render_corpus_summary_markdown(manifest), encoding="utf-8"
     )
+    for fold, partitions in outputs.items():
+        fold_dir = output / f"fold-{fold:02d}"
+        for partition, corpora in partitions.items():
+            for corpus_name, records in corpora.items():
+                path = fold_dir / corpus_name / f"{partition}.jsonl"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("w", encoding="utf-8") as stream:
+                    for record in records:
+                        stream.write(json.dumps(record, sort_keys=True) + "\n")
 
 
-def render_training_corpus_markdown(manifest: Mapping[str, Any]) -> str:
-    """Render a compact review summary for Step 2."""
-
-    totals = manifest["totals"]
+def render_corpus_summary_markdown(manifest: Mapping[str, Any]) -> str:
+    dataset = manifest["dataset"]
     lines = [
-        "# Compute-Matched Training Corpora",
+        "# Compute-Matched Source Corpora",
         "",
         "## Dataset",
         "",
         "| Measure | Value |",
         "|---|---:|",
-        f"| Episodes | {totals['episodes']:,} |",
-        f"| Article lineages | {totals['lineages']:,} |",
-        f"| Future revised | {totals['future_revised']:,} |",
-        f"| Future-revision rate | {totals['future_revised_rate']:.4f} |",
-        f"| Outer folds | {manifest['outer_folds']} |",
-        f"| Corpora | {len(manifest['corpus_names'])} |",
+        f"| Preference episodes | {dataset['episodes']:,} |",
+        f"| Evaluation lineages | {dataset['evaluation_lineages']:,} |",
+        f"| Independent temporal pairs | {dataset['temporal_pairs']:,} |",
+        f"| Independent temporal lineages | {dataset['temporal_lineages']:,} |",
         "",
-        "## Corpora",
+        "## Corpus regimes",
         "",
-        "| Corpus | Family | Label | Objective |",
-        "|---|---|---|---|",
     ]
-    for name in manifest["corpus_names"]:
-        corpus = manifest["corpora"][name]
-        label = corpus["label_name"] if corpus["label_name"] is not None else "none"
-        lines.append(f"| {name} | {corpus['family']} | {label} | {corpus['objective']} |")
-
+    lines.extend(f"- `{name}`" for name in manifest["corpora"])
+    lines.extend(
+        [
+            "",
+            "## Fold budgets",
+            "",
+            (
+                "| Fold | Partition | Records per corpus | Min whitespace tokens | "
+                "Max whitespace tokens |"
+            ),
+            "|---:|---|---:|---:|---:|",
+        ]
+    )
+    for fold in manifest["folds"]:
+        for partition, values in fold["partitions"].items():
+            lines.append(
+                "| {fold} | {partition} | {records:,} | {minimum:,} | {maximum:,} |".format(
+                    fold=fold["fold"],
+                    partition=partition,
+                    records=values["records_per_corpus"],
+                    minimum=values["minimum_exposure_tokens"],
+                    maximum=values["maximum_exposure_tokens"],
+                )
+            )
     lines.extend(["", "## Gates", "", "| Gate | Result |", "|---|---|"])
     lines.extend(
         f"| {name.replace('_', ' ')} | {'PASS' if passed else 'FAIL'} |"
         for name, passed in manifest["gates"].items()
     )
-
-    lines.extend(["", "## Fold 0 example counts", ""])
-    lines.extend(["| Corpus | Train | Validation | Test |", "|---|---:|---:|---:|"])
-    for name in manifest["corpus_names"]:
-        fold = manifest["corpora"][name]["folds"]["fold-00"]
-        lines.append(
-            "| {name} | {train:,} | {validation:,} | {test:,} |".format(
-                name=name,
-                train=fold["train"]["records"],
-                validation=fold["validation"]["records"],
-                test=fold["test"]["records"],
-            )
-        )
-
-    lines.extend(["", "## Warnings", ""])
-    warnings = manifest.get("warnings", [])
-    lines.extend(f"- {warning}" for warning in warnings)
-    if not warnings:
-        lines.append("- None.")
     lines.extend(
         [
             "",
             "## Experimental consequence",
             "",
-            "Later representation training must consume these exact source-task corpora.",
-            "Future labels are not written into corpus records; they remain reserved for the",
-            "downstream frozen-representation probe stage.",
+            "Step 3 must use the same encoder checkpoint, tokenizer, batch size, maximum sequence",
+            "length, optimiser, learning-rate schedule, update count and fixed checkpoint rule for",
+            "all six trained regimes. The untouched generic encoder remains the seventh arm.",
             "",
         ]
     )
     return "\n".join(lines)
 
 
-def _corpus_spec_summary(spec: CorpusSpec, stats_by_fold: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "family": spec.family,
-        "objective": spec.objective,
-        "label_name": spec.label_name,
-        "description": spec.description,
-        "folds": stats_by_fold,
-    }
-
-
-def _validate_sources(
-    split_manifest: Mapping[str, Any],
-    *,
-    episodes_path: Path | None,
-    split_manifest_path: Path | None,
+def _summarise_partition(
+    corpora: Mapping[str, Sequence[Mapping[str, Any]]],
+    episodes: Mapping[str, Mapping[str, Any]],
+    temporal_pairs: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
-    checks: dict[str, Any] = {}
-    if episodes_path is not None:
-        sources = split_manifest.get("sources", {})
-        expected = sources.get("episodes", {}).get("sha256") if isinstance(sources, Mapping) else None
-        observed = _sha256(episodes_path)
-        checks["episodes_sha256_matches_split_manifest"] = observed == expected
-        if expected is not None and observed != expected:
-            raise ValueError("episodes SHA-256 does not match the frozen split manifest")
-    else:
-        checks["episodes_sha256_matches_split_manifest"] = None
-
-    checks["split_manifest_sha256"] = _sha256(split_manifest_path) if split_manifest_path else None
-    return checks
-
-
-def _lineage_assignments(split_manifest: Mapping[str, Any]) -> dict[str, int]:
-    value = split_manifest.get("lineage_to_outer_fold")
-    if not isinstance(value, Mapping) or not value:
-        raise ValueError("split manifest requires lineage_to_outer_fold")
-    assignments: dict[str, int] = {}
-    for lineage_id, fold in value.items():
-        if type(fold) is not int:
-            raise TypeError(f"fold assignment for {lineage_id!r} must be an int")
-        assignments[str(lineage_id)] = fold
-    return assignments
+    counts = {name: len(records) for name, records in corpora.items()}
+    exposures = {
+        name: sum(record_exposure_tokens(record, episodes, temporal_pairs) for record in records)
+        for name, records in corpora.items()
+    }
+    return {
+        "records_per_corpus": next(iter(counts.values())),
+        "record_counts": counts,
+        "exposure_tokens": exposures,
+        "minimum_exposure_tokens": min(exposures.values()),
+        "maximum_exposure_tokens": max(exposures.values()),
+        "shared_step_budget": next(iter(counts.values())),
+    }
 
 
-def _outer_folds(split_manifest: Mapping[str, Any]) -> int:
-    folds = split_manifest.get("outer_folds")
-    if type(folds) is not int or folds < 3:
-        raise ValueError("split manifest outer_folds must be an integer of at least 3")
-    return folds
+def _build_gates(
+    outputs: Mapping[int, Mapping[str, Mapping[str, Sequence[Mapping[str, Any]]]]],
+    episodes: Mapping[str, Mapping[str, Any]],
+    temporal_pairs: Mapping[str, Mapping[str, Any]],
+    fold_documents: Mapping[int, Mapping[str, Any]],
+) -> dict[str, bool]:
+    equal_counts = True
+    no_test_leakage = True
+    no_future_fields = True
+    random_balanced = True
+    pair_balanced = True
+    pair_donors_cross_lineage = True
+    shuffled_preserves_labels = True
+    shuffled_donors_cross_lineage = True
+    temporal_external = True
+    temporal_balanced = True
+    evaluation_lineages = {str(value["lineage_id"]) for value in episodes.values()}
 
+    for fold, partitions in outputs.items():
+        test_lineages = set(map(str, fold_documents[fold]["test_lineages"]))
+        for corpora in partitions.values():
+            counts = {len(records) for records in corpora.values()}
+            equal_counts = equal_counts and len(counts) == 1
+            for corpus_name, records in corpora.items():
+                no_future_fields = no_future_fields and all(
+                    not FORBIDDEN_FUTURE_KEYS.intersection(record) for record in records
+                )
+                if corpus_name != "temporal_direction":
+                    no_test_leakage = no_test_leakage and all(
+                        str(record["lineage_id"]) not in test_lineages for record in records
+                    )
+            authentic = corpora["authentic_preference"]
+            random_records = corpora["random_label"]
+            shuffled = corpora["shuffled_preference"]
+            pair_records = corpora["pair_exposure"]
+            temporal = corpora["temporal_direction"]
 
-def _assign_records(
-    records: Sequence[Mapping[str, Any]],
-    *,
-    assignments: Mapping[str, int],
-    folds: int,
-) -> list[AssignedEpisode]:
-    assigned: list[AssignedEpisode] = []
-    for fold in range(folds):
-        validation_bucket = (fold + 1) % folds
-        for record in records:
-            lineage_id = str(record["lineage_id"])
-            if lineage_id not in assignments:
-                raise ValueError(f"episode lineage {lineage_id!r} is absent from split manifest")
-            partition = _partition_for_bucket(assignments[lineage_id], fold, validation_bucket)
-            assigned.append(AssignedEpisode(record=record, fold=fold, partition=partition))
-    return assigned
+            random_counts = Counter(int(row["target"]) for row in random_records)
+            random_balanced = random_balanced and abs(random_counts[0] - random_counts[1]) <= 1
+            pair_counts = Counter(int(row["target"]) for row in pair_records)
+            pair_balanced = pair_balanced and abs(pair_counts[0] - pair_counts[1]) <= 1
+            temporal_counts = Counter(int(row["target"]) for row in temporal)
+            temporal_balanced = temporal_balanced and (
+                abs(temporal_counts[0] - temporal_counts[1]) <= 1
+            )
 
-
-def _partition_for_bucket(bucket: int, test_bucket: int, validation_bucket: int) -> str:
-    if bucket == test_bucket:
-        return "test"
-    if bucket == validation_bucket:
-        return "validation"
-    return "train"
-
-
-def _label_maps(
-    assigned: Sequence[AssignedEpisode],
-    *,
-    seed: int,
-) -> dict[str, dict[tuple[int, str], dict[str, int]]]:
-    random_labels: dict[tuple[int, str], dict[str, int]] = defaultdict(dict)
-    shuffled_labels: dict[tuple[int, str], dict[str, int]] = defaultdict(dict)
-    grouped: dict[tuple[int, str], list[AssignedEpisode]] = defaultdict(list)
-    for item in assigned:
-        key = (item.fold, item.partition)
-        grouped[key].append(item)
-        random_labels[key][str(item.record["episode_id"])] = _stable_bit(
-            seed,
-            "random_label_control",
-            str(item.fold),
-            item.partition,
-            str(item.record["episode_id"]),
-        )
-
-    for key, items in grouped.items():
-        source = sorted(items, key=lambda item: str(item.record["episode_id"]))
-        labels = [int(item.record["selected_index"]) for item in source]
-        target = sorted(items, key=lambda item: _shuffle_key(seed, key, item))
-        if len(labels) > 1:
-            labels = labels[1:] + labels[:1]
-        for item, label in zip(target, labels, strict=True):
-            shuffled_labels[key][str(item.record["episode_id"])] = label
+            for row in pair_records:
+                if int(row["target"]) == 0:
+                    source = episodes[str(row["source_id"])]
+                    donor = episodes[str(row["candidate_b_source_episode_id"])]
+                    pair_donors_cross_lineage = pair_donors_cross_lineage and (
+                        str(source["lineage_id"]) != str(donor["lineage_id"])
+                    )
+            authentic_labels = Counter(int(row["target"]) for row in authentic)
+            shuffled_labels = Counter(int(row["target"]) for row in shuffled)
+            shuffled_preserves_labels = shuffled_preserves_labels and (
+                authentic_labels == shuffled_labels
+            )
+            for row in shuffled:
+                source = episodes[str(row["source_id"])]
+                donor = episodes[str(row["label_source_episode_id"])]
+                shuffled_donors_cross_lineage = shuffled_donors_cross_lineage and (
+                    str(source["lineage_id"]) != str(donor["lineage_id"])
+                )
+            temporal_external = temporal_external and all(
+                str(row["lineage_id"]) not in evaluation_lineages
+                and str(row["source_id"]) in temporal_pairs
+                for row in temporal
+            )
 
     return {
-        "random_label_control": dict(random_labels),
-        "shuffled_preference_control": dict(shuffled_labels),
+        "all_six_corpora_have_equal_record_counts": equal_counts,
+        "no_preference_source_record_uses_test_lineages": no_test_leakage,
+        "no_source_task_record_contains_future_fields": no_future_fields,
+        "random_labels_are_balanced": random_balanced,
+        "pair_exposure_labels_are_balanced": pair_balanced,
+        "pair_exposure_negative_donors_cross_lineages": pair_donors_cross_lineage,
+        "shuffled_preferences_preserve_label_counts": shuffled_preserves_labels,
+        "shuffled_preference_donors_cross_lineages": shuffled_donors_cross_lineage,
+        "temporal_pairs_are_external_to_evaluation_lineages": temporal_external,
+        "temporal_direction_labels_are_balanced": temporal_balanced,
     }
 
 
-def _shuffle_key(seed: int, key: tuple[int, str], item: AssignedEpisode) -> str:
-    return _stable_hex(
-        seed,
-        "shuffled_preference_control",
-        str(key[0]),
-        key[1],
-        str(item.record["episode_id"]),
-    )
-
-
-def _corpus_record(
-    record: Mapping[str, Any],
-    *,
-    spec: CorpusSpec,
-    fold: int,
-    partition: str,
-    label: int | None,
-) -> dict[str, Any]:
-    if spec.name in ("authentic_preference", "temporal_direction_control"):
-        label = int(record["selected_index"])
-
-    output = {
-        "corpus_record_schema_version": TRAINING_CORPUS_SCHEMA_VERSION,
-        "corpus_name": spec.name,
-        "objective": spec.objective,
-        "fold": fold,
-        "partition": partition,
-        "source_training_allowed": partition in ("train", "validation"),
-        "episode_id": str(record["episode_id"]),
-        "lineage_id": str(record["lineage_id"]),
-        "input_text": _input_text(record),
-        "candidate_a": str(record["candidate_a"]),
-        "candidate_b": str(record["candidate_b"]),
-        "context_before": str(record.get("context_before", "")),
-        "context_after": str(record.get("context_after", "")),
-        "metadata": _metadata(record),
-    }
-    output["label_name"] = spec.label_name
-    output["label"] = label if spec.label_name is not None else None
-    return output
-
-
-def _metadata(record: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        "selected_sentence_index": record.get("selected_sentence_index"),
-        "sentence_position": record.get("sentence_position"),
-        "edit_similarity": record.get("edit_similarity"),
-        "lexical_jaccard": record.get("lexical_jaccard"),
-        "v0_version_id": record.get("v0_version_id"),
-        "v1_version_id": record.get("v1_version_id"),
-    }
-
-
-def _input_text(record: Mapping[str, Any]) -> str:
-    parts = [
-        "CONTEXT_BEFORE:",
-        str(record.get("context_before", "")).strip(),
-        "CANDIDATE_A:",
-        str(record["candidate_a"]).strip(),
-        "CANDIDATE_B:",
-        str(record["candidate_b"]).strip(),
-        "CONTEXT_AFTER:",
-        str(record.get("context_after", "")).strip(),
-    ]
-    return "\n".join(parts)
-
-
-def _partition_stats(
-    records: Sequence[Mapping[str, Any]],
-    *,
-    source_records: Sequence[Mapping[str, Any]],
-) -> dict[str, Any]:
-    labels = [record.get("label") for record in records if record.get("label") is not None]
-    future_revised = sum(bool(record["future_revised"]) for record in source_records)
-    label_rate = sum(int(label) == 1 for label in labels) / len(labels) if labels else None
-    return {
-        "records": len(records),
-        "lineages": len({str(record["lineage_id"]) for record in records}),
-        "input_tokens_whitespace": sum(_token_count(str(r["input_text"])) for r in records),
-        "labelled_records": len(labels),
-        "label_one_rate": label_rate,
-        "future_revised": future_revised,
-        "future_revised_rate": future_revised / len(source_records) if source_records else 0.0,
-        "source_training_allowed": all(record["source_training_allowed"] for record in records),
-    }
-
-
-def _global_totals(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    revised = sum(bool(record["future_revised"]) for record in records)
-    return {
-        "episodes": len(records),
-        "lineages": len({str(record["lineage_id"]) for record in records}),
-        "future_revised": revised,
-        "future_stable": len(records) - revised,
-        "future_revised_rate": revised / len(records),
-    }
-
-
-def _split_identity(split_manifest: Mapping[str, Any]) -> dict[str, Any]:
-    sources = split_manifest.get("sources", {})
-    episode_source = sources.get("episodes", {}) if isinstance(sources, Mapping) else {}
-    numeric_source = sources.get("numeric_flags", {}) if isinstance(sources, Mapping) else {}
-    return {
-        "seed": split_manifest.get("seed"),
-        "outer_folds": split_manifest.get("outer_folds"),
-        "grouping_key": split_manifest.get("grouping_key"),
-        "episodes_sha256": episode_source.get("sha256"),
-        "numeric_flags_sha256": numeric_source.get("sha256"),
-    }
-
-
-def _build_gates(manifest: Mapping[str, Any]) -> dict[str, bool]:
-    corpus_names = list(manifest["corpus_names"])
-    folds = range(int(manifest["outer_folds"]))
-    equal_records = True
-    equal_tokens = True
-    test_not_training = True
-    for fold in folds:
-        for partition in PARTITIONS:
-            stats = [
-                manifest["corpora"][name]["folds"][f"fold-{fold:02d}"][partition]
-                for name in corpus_names
-            ]
-            equal_records = equal_records and len({item["records"] for item in stats}) == 1
-            equal_tokens = equal_tokens and _all_token_counts_equal(stats)
-            if partition == "test":
-                test_not_training = test_not_training and _all_not_trainable(stats)
-    return {
-        "episodes_hash_matches_frozen_split": bool(
-            manifest["source_checks"]["episodes_sha256_matches_split_manifest"]
-        ),
-        "all_corpora_share_partition_record_counts": equal_records,
-        "all_corpora_share_partition_input_token_counts": equal_tokens,
-        "future_labels_redacted_from_corpus_records": True,
-        "test_partitions_marked_not_for_source_training": test_not_training,
-        "all_expected_corpora_present": set(corpus_names)
-        == {spec.name for spec in CORPUS_SPECS},
-    }
-
-
-def _all_token_counts_equal(stats: Sequence[Mapping[str, Any]]) -> bool:
-    return len({item["input_tokens_whitespace"] for item in stats}) == 1
-
-
-def _all_not_trainable(stats: Sequence[Mapping[str, Any]]) -> bool:
-    return not any(item["source_training_allowed"] for item in stats)
-
-
-def _build_warnings(manifest: Mapping[str, Any]) -> list[str]:
-    warnings = [
-        "Do not train source-task encoders on test partitions.",
-        "Future labels are used in the manifest summary only, not in corpus JSONL records.",
-    ]
-    if not all(manifest["gates"].values()):
-        warnings.append("At least one Step 2 corpus gate failed; do not train these corpora.")
-    return warnings
-
-
-def _write_jsonl(path: Path, records: Iterable[Mapping[str, Any]]) -> None:
-    with path.open("w", encoding="utf-8") as stream:
-        for record in records:
-            stream.write(json.dumps(record, sort_keys=True) + "\n")
-
-
-def _source_metadata(path: Path | None) -> dict[str, Any] | None:
-    if path is None:
-        return None
-    resolved = path.expanduser().resolve()
-    return {
-        "path": str(resolved),
-        "bytes": resolved.stat().st_size,
-        "sha256": _sha256(resolved),
-    }
-
-
-def _sha256(path: Path | None) -> str | None:
-    if path is None:
-        return None
-    resolved = path.expanduser().resolve()
-    digest = hashlib.sha256()
-    with resolved.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _stable_hex(seed: int, *parts: str) -> str:
-    joined = "\0".join((str(seed), *parts))
-    return hashlib.sha256(joined.encode("utf-8")).hexdigest()
-
-
-def _stable_bit(seed: int, *parts: str) -> int:
-    return int(_stable_hex(seed, *parts)[:2], 16) & 1
-
-
-def _token_count(text: str) -> int:
-    return len(text.split())
+__all__ = [
+    "CORPUS_NAMES",
+    "FORBIDDEN_FUTURE_KEYS",
+    "build_compute_matched_corpora",
+    "load_json",
+    "load_jsonl",
+    "render_corpus_summary_markdown",
+    "write_compute_matched_corpora",
+]

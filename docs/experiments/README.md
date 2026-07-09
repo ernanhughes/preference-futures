@@ -14,8 +14,8 @@ This directory extends the blog into an executable sequence. Each step contains:
 | Step | Document | Status |
 |---:|---|---|
 | 1 | [Freeze article-grouped split manifests](01-grouped-split-manifests.md) | **Verified on 12,056 episodes / 3,386 lineages** |
-| 2 | [Build compute-matched training corpora](02-compute-matched-training-corpora.md) | Implemented; awaiting local run |
-| 3 | Train authentic and control representations | Planned |
+| 2 | [Build compute-matched source corpora](02-compute-matched-corpora.md) | **Implemented; awaiting real-data run** |
+| 3 | Train authentic and control representations | Next |
 | 4 | Verify source-task learning and freeze encoders | Planned |
 | 5 | Extract frozen representations | Planned |
 | 6 | Train identical future probes | Planned |
@@ -35,9 +35,26 @@ numeric flags SHA-256: abf517a03760da77bf60029d3385887ec6d3b73bd7db7e3d74f238ead
 
 The compact result record is [`docs/results/step-01-grouped-splits.json`](../results/step-01-grouped-splits.json).
 
+## Step 2 comparison arms
+
+Six encoders receive additional source-task training:
+
+```text
+language_adaptation
+pair_exposure
+temporal_direction
+random_label
+shuffled_preference
+authentic_preference
+```
+
+The untouched pretrained encoder remains a seventh arm.
+
+The exact-pair authentic and temporal targets are identical on V0→V1 revision pairs. Step 2 therefore builds the temporal-direction corpus from separate NewsEdits article lineages that are disjoint from every future-evaluation lineage.
+
 ## Rule
 
-A later step must consume the committed artifacts from the earlier step. It must not silently regenerate splits, labels or shortcut flags with a new seed or changed definition.
+A later step must consume the committed artifacts from the earlier step. It must not silently regenerate splits, labels, shortcut flags, temporal pools or corpus assignments with a new seed or changed definition.
 
 The publication-facing prose fragments live under:
 

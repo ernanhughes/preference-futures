@@ -24,6 +24,7 @@ preference-futures-audit = "preference_futures.audit.cli:main"
 preference-futures-numeric-audit = "preference_futures.audit.numeric_cli:main"
 preference-futures-splits = "preference_futures.splits.cli:main"
 preference-futures-corpora = "preference_futures.corpora.cli:main"
+preference-futures-verify-corpora = "preference_futures.corpora.verify_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

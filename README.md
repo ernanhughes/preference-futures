@@ -133,30 +133,37 @@ numeric-change rate:  0.0697 percentage points
 
 The assignments, source hashes and compact result are frozen in [Step 1](docs/experiments/01-grouped-split-manifests.md) and [`docs/results/step-01-grouped-splits.json`](docs/results/step-01-grouped-splits.json).
 
-## Step 2: compute-matched training corpora
+## Step 2: build the six trained comparison corpora
 
-Build deterministic source-task corpora from the frozen split boundary:
+Run:
 
 ```powershell
-.\scripts\50-build-training-corpora.ps1 `
+.\scripts\50-build-compute-matched-corpora.ps1 `
+  -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db" `
   -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
-  -SplitManifestPath artifacts\transfer\splits\manifest.json `
+  -SplitsDirectory artifacts\transfer\splits `
   -OutputDirectory artifacts\transfer\corpora `
   -Seed 17
 ```
 
-The builder emits six corpora with the same row population, fold partitions and serialized input text:
+Step 2 materialises:
 
 ```text
+language_adaptation
+pair_exposure
+temporal_direction
+random_label
+shuffled_preference
 authentic_preference
-language_modeling_control
-pair_exposure_control
-temporal_direction_control
-random_label_control
-shuffled_preference_control
 ```
 
-It refuses to run if the episode JSONL hash differs from the Step 1 manifest. Future labels are excluded from corpus JSONL records and retained only in the corpus manifest summary.
+The untouched pretrained encoder remains a seventh arm.
+
+The builder enforces equal source-record counts within every fold partition, keeps future and V2 fields out of source training, prevents fold test-lineage leakage, balances random and pair-exposure labels, and requires shuffled and negative-pair donors to cross article lineages.
+
+The exact-pair temporal target is identical to the authentic retained-candidate target on V0→V1 revision pairs. The independent temporal corpus is therefore extracted from other NewsEdits article lineages that never appear in future evaluation. See [Step 2](docs/experiments/02-compute-matched-corpora.md) for the identification limit and full protocol.
+
+Step 2 matches source-record budgets. Step 3 must enforce actual equal compute with one fixed checkpoint, tokenizer, sequence length, padding policy, batch size, optimiser, schedule and update count.
 
 ## Repository sequence
 
@@ -169,7 +176,7 @@ It refuses to run if the episode JSONL hash differs from the Step 1 manifest. Fu
 6. Numeric shortcut audit           verified
 7. Executable blog and claim ledger implemented
 8. Grouped split manifests          verified and frozen
-9. Compute-matched training corpora implemented; awaiting local run
+9. Compute-matched source corpora   implemented; awaiting real-data run
 10. Preference and control training next
 11. Frozen representation transfer
 12. Sample-efficiency controls
