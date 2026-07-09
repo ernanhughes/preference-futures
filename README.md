@@ -25,22 +25,6 @@ from preference_futures.newsedits import (
 )
 ```
 
-Inspect a NewsEdits SQLite database:
-
-```bash
-python -m preference_futures.newsedits inspect --db /path/to/newsedits.db
-```
-
-Extract versioned JSONL episodes and an exclusion audit:
-
-```bash
-python -m preference_futures.newsedits extract \
-  --db /path/to/newsedits.db \
-  --out artifacts/newsedits/episodes.jsonl \
-  --audit-out artifacts/newsedits/audit.json \
-  --seed 17
-```
-
 The adapter is dependency-free and performs:
 
 - SQLite schema discovery;
@@ -50,16 +34,49 @@ The adapter is dependency-free and performs:
 - V1→V2 revised/stable outcome resolution;
 - explicit exclusion counting.
 
+## PowerShell workflow
+
+The numbered scripts in `scripts/` are the normal way to run the repository on Windows.
+
+First-time setup:
+
+```powershell
+.\scripts\00-setup.ps1
+```
+
+Run tests and linting:
+
+```powershell
+.\scripts\01-check.ps1
+```
+
+Run the current end-to-end smoke workflow:
+
+```powershell
+.\scripts\20-current-smoke-pipeline.ps1 `
+  -DatabasePath C:\data\newsedits.db
+```
+
+Run the full extraction after the smoke output has been reviewed:
+
+```powershell
+.\scripts\12-newsedits-full.ps1 `
+  -DatabasePath C:\data\newsedits.db
+```
+
+See [`scripts/README.md`](scripts/README.md) for every script and parameter.
+
 ## Repository sequence
 
 ```text
 1. Canonical episode contract       done
 2. NewsEdits source adapter         implemented
-3. Context viability audit          next
-4. Grouped split manifests
-5. Preference-task baselines
-6. Frozen representation transfer
-7. Sample-efficiency and shortcut controls
+3. PowerShell run scripts           implemented
+4. Context viability audit          next
+5. Grouped split manifests
+6. Preference-task baselines
+7. Frozen representation transfer
+8. Sample-efficiency and shortcut controls
 ```
 
 ## Development
