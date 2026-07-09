@@ -14,7 +14,7 @@ This directory extends the blog into an executable sequence. Each step contains:
 | Step | Document | Status |
 |---:|---|---|
 | 1 | [Freeze article-grouped split manifests](01-grouped-split-manifests.md) | **Verified on 12,056 episodes / 3,386 lineages** |
-| 2 | Build compute-matched training corpora | Next |
+| 2 | [Build compute-matched training corpora](02-compute-matched-training-corpora.md) | Implemented; awaiting local run |
 | 3 | Train authentic and control representations | Planned |
 | 4 | Verify source-task learning and freeze encoders | Planned |
 | 5 | Extract frozen representations | Planned |
