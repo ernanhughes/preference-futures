@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import gc
-import json
 import math
 import os
 import platform
@@ -34,6 +33,7 @@ from preference_futures.training.contract import (
 from preference_futures.training.data import (
     ClassificationExample,
     MaskedLanguageExample,
+    SourceStore,
     deterministic_training_batches,
     load_source_store,
     materialize_record,
@@ -65,7 +65,9 @@ def prepare_training(
     output = output_directory.expanduser().resolve()
     if output.exists() and any(output.iterdir()):
         if not force:
-            raise ValueError(f"training output is not empty; pass --force to replace it: {output}")
+            raise ValueError(
+                f"training output is not empty; pass --force to replace it: {output}"
+            )
         shutil.rmtree(output)
     output.mkdir(parents=True, exist_ok=True)
 
@@ -79,19 +81,19 @@ def prepare_training(
     tokenizer_dir = snapshot / "tokenizer"
 
     _set_seed(stack["torch"], seed)
+    revision = None if resolved_revision == "local" else resolved_revision
     tokenizer = stack["AutoTokenizer"].from_pretrained(
         model_id,
-        revision=None if resolved_revision == "local" else resolved_revision,
+        revision=revision,
         use_fast=True,
     )
     if not getattr(tokenizer, "is_fast", False):
-        raise ValueError("Step 3 requires a fast tokenizer for deterministic whole-word masks")
+        raise ValueError(
+            "Step 3 requires a fast tokenizer for deterministic whole-word masks"
+        )
     if tokenizer.mask_token_id is None:
         raise ValueError("Step 3 language adaptation requires a tokenizer mask token")
-    encoder = stack["AutoModel"].from_pretrained(
-        model_id,
-        revision=None if resolved_revision == "local" else resolved_revision,
-    )
+    encoder = stack["AutoModel"].from_pretrained(model_id, revision=revision)
     encoder.save_pretrained(encoder_dir, safe_serialization=True)
     tokenizer.save_pretrained(tokenizer_dir)
 
@@ -137,18 +139,19 @@ def run_training_jobs(
     smoke_steps: int | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Run selected jobs under the frozen contract, resetting the fold seed for every regime."""
+    """Run selected jobs under the frozen contract."""
 
     stack = _require_training_stack()
     torch = stack["torch"]
     training = training_directory.expanduser().resolve()
-    contract_path = training / "contract.json"
-    contract = load_json(contract_path)
+    contract = load_json(training / "contract.json")
     validate_training_contract(contract)
-    selected_folds = parse_int_selection(folds, upper_bound=int(contract["outer_folds"]))
+    selected_folds = parse_int_selection(
+        folds,
+        upper_bound=int(contract["outer_folds"]),
+    )
     selected_regimes = parse_regime_selection(regimes)
-    optimisation = contract["optimisation"]
-    confirmatory_steps = int(optimisation["update_steps"])
+    confirmatory_steps = int(contract["optimisation"]["update_steps"])
     actual_steps = smoke_steps if smoke_steps is not None else confirmatory_steps
     if actual_steps < 1 or actual_steps > confirmatory_steps:
         raise ValueError("smoke_steps must be between 1 and the frozen update budget")
@@ -161,11 +164,15 @@ def run_training_jobs(
         Path(contract["sources"]["temporal_pairs"]["path"]),
     )
     snapshot = Path(contract["model"]["base_snapshot_path"])
-    encoder_dir = snapshot / "encoder"
-    tokenizer_dir = snapshot / "tokenizer"
-    tokenizer = stack["AutoTokenizer"].from_pretrained(tokenizer_dir, use_fast=True)
-    base_encoder = stack["AutoModel"].from_pretrained(encoder_dir)
-    base_state = {name: tensor.detach().cpu().clone() for name, tensor in base_encoder.state_dict().items()}
+    tokenizer = stack["AutoTokenizer"].from_pretrained(
+        snapshot / "tokenizer",
+        use_fast=True,
+    )
+    base_encoder = stack["AutoModel"].from_pretrained(snapshot / "encoder")
+    base_state = {
+        name: tensor.detach().cpu().clone()
+        for name, tensor in base_encoder.state_dict().items()
+    }
     del base_encoder
     resolved_device = _resolve_device(torch, device)
 
@@ -186,20 +193,21 @@ def run_training_jobs(
             ):
                 skipped.append({"fold": fold, "regime": regime})
                 continue
-            report = _run_one_job(
-                stack=stack,
-                contract=contract,
-                job=job,
-                source_store=source_store,
-                tokenizer=tokenizer,
-                base_state=base_state,
-                output_directory=run_directory,
-                device=resolved_device,
-                update_steps=actual_steps,
-                non_confirmatory=non_confirmatory,
-                force=force,
+            completed.append(
+                _run_one_job(
+                    stack=stack,
+                    contract=contract,
+                    job=job,
+                    source_store=source_store,
+                    tokenizer=tokenizer,
+                    base_state=base_state,
+                    output_directory=run_directory,
+                    device=resolved_device,
+                    update_steps=actual_steps,
+                    non_confirmatory=non_confirmatory,
+                    force=force,
+                )
             )
-            completed.append(report)
 
     summary = {
         "contract_sha256": contract["contract_sha256"],
@@ -209,7 +217,8 @@ def run_training_jobs(
         "selected_folds": list(selected_folds),
         "selected_regimes": list(selected_regimes),
         "completed_jobs": [
-            {"fold": report["fold"], "regime": report["regime"]} for report in completed
+            {"fold": report["fold"], "regime": report["regime"]}
+            for report in completed
         ],
         "skipped_jobs": skipped,
         "device": str(resolved_device),
@@ -224,7 +233,7 @@ def _run_one_job(
     stack: Mapping[str, Any],
     contract: Mapping[str, Any],
     job: Mapping[str, Any],
-    source_store: Any,
+    source_store: SourceStore,
     tokenizer: Any,
     base_state: Mapping[str, Any],
     output_directory: Path,
@@ -238,10 +247,7 @@ def _run_one_job(
     regime = str(job["regime"])
     train_path = Path(job["train"]["path"])
     validation_path = Path(job["validation"]["path"])
-    if sha256_file(train_path) != str(job["train"]["sha256"]):
-        raise ValueError(f"training corpus changed: fold {fold} {regime}")
-    if sha256_file(validation_path) != str(job["validation"]["sha256"]):
-        raise ValueError(f"validation corpus changed: fold {fold} {regime}")
+    _assert_job_sources_unchanged(job, train_path, validation_path, fold, regime)
     train_records = load_jsonl(train_path)
     validation_records = load_jsonl(validation_path)
     if len(train_records) != int(job["train"]["records"]):
@@ -277,6 +283,7 @@ def _run_one_job(
     )
     metrics: list[dict[str, Any]] = []
     running_loss = 0.0
+    steps_since_log = 0
     fallback_masks = 0
     optimizer.zero_grad(set_to_none=True)
     log_every = int(optimisation["log_every_steps"])
@@ -306,24 +313,26 @@ def _run_one_job(
             raise ValueError(f"non-finite loss at fold {fold} {regime} step {step}")
         loss.backward()
         torch.nn.utils.clip_grad_norm_(
-            model.parameters(), float(optimisation["gradient_clip_norm"])
+            model.parameters(),
+            float(optimisation["gradient_clip_norm"]),
         )
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad(set_to_none=True)
         running_loss += float(loss.detach().cpu())
+        steps_since_log += 1
         if step % log_every == 0 or step == update_steps:
             metrics.append(
                 {
                     "step": step,
-                    "mean_training_loss_since_last_log": running_loss
-                    / (log_every if step % log_every == 0 else step % log_every),
+                    "mean_training_loss_since_last_log": running_loss / steps_since_log,
                     "learning_rate": float(scheduler.get_last_lr()[0]),
                     "examples_seen": step * batch_size,
                     "padded_token_positions": step * batch_size * max_length,
                 }
             )
             running_loss = 0.0
+            steps_since_log = 0
 
     validation = _evaluate(
         stack=stack,
@@ -336,7 +345,53 @@ def _run_one_job(
         max_length=max_length,
         device=device,
     )
+    report = _persist_run(
+        stack=stack,
+        model=model,
+        tokenizer=tokenizer,
+        contract=contract,
+        job=job,
+        metrics=metrics,
+        validation=validation,
+        output_directory=output_directory,
+        device=device,
+        fold_seed=fold_seed,
+        update_steps=update_steps,
+        non_confirmatory=non_confirmatory,
+        fallback_masks=fallback_masks,
+        force=force,
+    )
 
+    del model, optimizer, scheduler
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return report
+
+
+def _persist_run(
+    *,
+    stack: Mapping[str, Any],
+    model: Any,
+    tokenizer: Any,
+    contract: Mapping[str, Any],
+    job: Mapping[str, Any],
+    metrics: Sequence[Mapping[str, Any]],
+    validation: Mapping[str, Any],
+    output_directory: Path,
+    device: Any,
+    fold_seed: int,
+    update_steps: int,
+    non_confirmatory: bool,
+    fallback_masks: int,
+    force: bool,
+) -> dict[str, Any]:
+    torch = stack["torch"]
+    fold = int(job["fold"])
+    regime = str(job["regime"])
+    optimisation = contract["optimisation"]
+    batch_size = int(optimisation["batch_size"])
+    max_length = int(optimisation["maximum_sequence_length"])
     temporary = output_directory.with_name(output_directory.name + ".tmp")
     if temporary.exists():
         shutil.rmtree(temporary)
@@ -382,7 +437,7 @@ def _run_one_job(
             "checkpoint_step": update_steps,
             "early_stopping_used": False,
         },
-        "validation": validation,
+        "validation": dict(validation),
         "mask_fallback_examples": fallback_masks,
         "environment": {
             "python": platform.python_version(),
@@ -401,11 +456,6 @@ def _run_one_job(
     }
     write_json(temporary / "run.json", report)
     temporary.replace(output_directory)
-
-    del model, optimizer, scheduler
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
     return report
 
 
@@ -440,17 +490,22 @@ def _collate_classification(
 ) -> dict[str, Any]:
     if not all(isinstance(example, ClassificationExample) for example in examples):
         raise ValueError("classification batch contains a non-classification example")
-    texts = [example.text for example in examples if isinstance(example, ClassificationExample)]
-    targets = [example.target for example in examples if isinstance(example, ClassificationExample)]
+    typed_examples = [
+        example for example in examples if isinstance(example, ClassificationExample)
+    ]
     encoded = tokenizer(
-        texts,
+        [example.text for example in typed_examples],
         padding="max_length",
         truncation=True,
         max_length=max_length,
         return_tensors="pt",
     )
     batch = {name: tensor.to(device) for name, tensor in encoded.items()}
-    batch["labels"] = stack["torch"].tensor(targets, dtype=stack["torch"].long, device=device)
+    batch["labels"] = stack["torch"].tensor(
+        [example.target for example in typed_examples],
+        dtype=stack["torch"].long,
+        device=device,
+    )
     return batch
 
 
@@ -465,9 +520,11 @@ def _collate_mlm(
     torch = stack["torch"]
     if not all(isinstance(example, MaskedLanguageExample) for example in examples):
         raise ValueError("MLM batch contains a non-language example")
-    words = [list(example.words) for example in examples if isinstance(example, MaskedLanguageExample)]
+    typed_examples = [
+        example for example in examples if isinstance(example, MaskedLanguageExample)
+    ]
     encoded = tokenizer(
-        words,
+        [list(example.words) for example in typed_examples],
         is_split_into_words=True,
         padding="max_length",
         truncation=True,
@@ -477,8 +534,7 @@ def _collate_mlm(
     input_ids = encoded["input_ids"].clone()
     labels = torch.full_like(input_ids, -100)
     fallback_count = 0
-    for batch_index, example in enumerate(examples):
-        assert isinstance(example, MaskedLanguageExample)
+    for batch_index, example in enumerate(typed_examples):
         word_ids = encoded.word_ids(batch_index=batch_index)
         selected = set(example.mask_word_indices)
         positions = [
@@ -506,7 +562,7 @@ def _evaluate(
     model: Any,
     tokenizer: Any,
     records: Sequence[dict[str, Any]],
-    source_store: Any,
+    source_store: SourceStore,
     regime: str,
     batch_size: int,
     max_length: int,
@@ -515,11 +571,14 @@ def _evaluate(
     torch = stack["torch"]
     model.eval()
     loss_weighted = 0.0
-    weight = 0
+    supervised_units = 0
     correct = 0
     fallback_masks = 0
     with torch.no_grad():
-        for indices in sequential_validation_batches(len(records), batch_size=batch_size):
+        for indices in sequential_validation_batches(
+            len(records),
+            batch_size=batch_size,
+        ):
             examples = [materialize_record(records[index], source_store) for index in indices]
             if regime == LANGUAGE_ADAPTATION_REGIME:
                 batch, fallback_count = _collate_mlm(
@@ -533,11 +592,9 @@ def _evaluate(
                 outputs = model(**batch)
                 labels = batch["labels"]
                 mask = labels.ne(-100)
-                supervised = int(mask.sum().item())
+                batch_units = int(mask.sum().item())
                 predictions = outputs.logits.argmax(dim=-1)
                 correct += int((predictions[mask] == labels[mask]).sum().item())
-                loss_weighted += float(outputs.loss.detach().cpu()) * supervised
-                weight += supervised
             else:
                 batch = _collate_classification(
                     stack,
@@ -548,23 +605,36 @@ def _evaluate(
                 )
                 outputs = model(**batch)
                 labels = batch["labels"]
+                batch_units = int(labels.numel())
                 predictions = outputs.logits.argmax(dim=-1)
-                batch_count = int(labels.numel())
                 correct += int((predictions == labels).sum().item())
-                loss_weighted += float(outputs.loss.detach().cpu()) * batch_count
-                weight += batch_count
+            loss_weighted += float(outputs.loss.detach().cpu()) * batch_units
+            supervised_units += batch_units
     model.train()
-    mean_loss = loss_weighted / max(1, weight)
+    mean_loss = loss_weighted / max(1, supervised_units)
     result = {
         "records": len(records),
-        "supervised_units": weight,
+        "supervised_units": supervised_units,
         "mean_loss": mean_loss,
-        "accuracy": correct / max(1, weight),
+        "accuracy": correct / max(1, supervised_units),
         "mask_fallback_examples": fallback_masks,
     }
     if regime == LANGUAGE_ADAPTATION_REGIME:
         result["perplexity"] = math.exp(min(20.0, mean_loss))
     return result
+
+
+def _assert_job_sources_unchanged(
+    job: Mapping[str, Any],
+    train_path: Path,
+    validation_path: Path,
+    fold: int,
+    regime: str,
+) -> None:
+    if sha256_file(train_path) != str(job["train"]["sha256"]):
+        raise ValueError(f"training corpus changed: fold {fold} {regime}")
+    if sha256_file(validation_path) != str(job["validation"]["sha256"]):
+        raise ValueError(f"validation corpus changed: fold {fold} {regime}")
 
 
 def _linear_schedule(*, warmup_steps: int, total_steps: int) -> Any:
@@ -599,7 +669,8 @@ def _completed_run_matches(
             == expected_steps
             and sha256_directory(run_directory / "task-model")
             == artifacts["task_model_sha256"]
-            and sha256_directory(run_directory / "encoder") == artifacts["encoder_sha256"]
+            and sha256_directory(run_directory / "encoder")
+            == artifacts["encoder_sha256"]
             and sha256_directory(run_directory / "tokenizer")
             == artifacts["tokenizer_sha256"]
         )
