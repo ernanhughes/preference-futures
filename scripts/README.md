@@ -17,6 +17,7 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | `15-numeric-shortcut-audit.ps1` | Measure numerical-update prevalence, future risk and repeated numeric trajectories. |
 | `20-current-smoke-pipeline.ps1` | Run checks, inspect the database, extract a smoke sample, and verify it. |
 | `30-reproduce-blog-evidence.ps1` | Run the complete extraction, context and numeric evidence chain used by the blog. |
+| `40-build-grouped-splits.ps1` | Freeze deterministic article-lineage grouped train, validation and test manifests. |
 | `_common.ps1` | Shared internal helpers; do not run directly. |
 
 ## First-time setup
@@ -159,4 +160,32 @@ artifacts/newsedits/blog-evidence/
 
 The accompanying evidence map is in [`docs/CLAIMS.md`](../docs/CLAIMS.md), and the executable blog draft is in [`docs/blog/what-does-a-preference-know-about-the-future.md`](../docs/blog/what-does-a-preference-know-about-the-future.md).
 
-All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as split manifests, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
+## Step 1: freeze grouped split manifests
+
+Run this only after generating the numeric flags used for balancing:
+
+```powershell
+.\scripts\40-build-grouped-splits.ps1 `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -NumericFlagsPath artifacts\newsedits\viability-5000\numeric-flags.jsonl `
+  -OutputDirectory artifacts\transfer\splits `
+  -Folds 10 `
+  -Seed 17
+```
+
+This writes:
+
+```text
+artifacts/transfer/splits/manifest.json
+artifacts/transfer/splits/split-summary.json
+artifacts/transfer/splits/split-summary.md
+artifacts/transfer/splits/fold-00.json
+...
+artifacts/transfer/splits/fold-09.json
+```
+
+For outer fold `i`, test is bucket `i`, validation is bucket `(i + 1) mod 10`, and the remaining eight buckets train. Every article lineage is test exactly once and validation exactly once. The manifest records input hashes, partition counts, target rates, numeric-shortcut rates and leakage gates.
+
+The detailed experimental step is [`docs/experiments/01-grouped-split-manifests.md`](../docs/experiments/01-grouped-split-manifests.md). Its publication block is [`docs/blog/blocks/step-01-grouped-splits.md`](../docs/blog/blocks/step-01-grouped-splits.md).
+
+All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as training corpora, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
