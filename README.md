@@ -2,6 +2,14 @@
 
 Research code for testing whether preference-specific learning transfers to prediction of a later, decision-linked outcome.
 
+## Publication and evidence map
+
+- [Executable blog draft](docs/blog/what-does-a-preference-know-about-the-future.md)
+- [Research claim ledger](docs/CLAIMS.md)
+- [PowerShell workflow index](scripts/README.md)
+
+The publication rule is simple: every sentence beginning with “we found” must map to a committed script and output artifact. Representation-transfer claims remain hypotheses until the grouped control experiment is implemented and run.
+
 ## Episode contract
 
 A revision triplet is represented as:
@@ -50,9 +58,7 @@ The adapter is dependency-free and performs:
 - V1→V2 revised/stable outcome resolution;
 - explicit exclusion counting.
 
-## PowerShell workflow
-
-The numbered scripts in `scripts/` are the normal way to run the repository on Windows.
+## Reproduce the blog evidence
 
 First-time setup:
 
@@ -60,35 +66,30 @@ First-time setup:
 .\scripts\00-setup.ps1
 ```
 
-Run tests and linting:
+Run the complete current evidence chain against an official source database:
 
 ```powershell
-.\scripts\01-check.ps1
-```
-
-Run the current end-to-end smoke workflow directly against an official database:
-
-```powershell
-.\scripts\20-current-smoke-pipeline.ps1 `
+.\scripts\30-reproduce-blog-evidence.ps1 `
   -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db"
 ```
 
-Run the full extraction after the smoke output has been reviewed:
+The command performs:
 
-```powershell
-.\scripts\12-newsedits-full.ps1 `
-  -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db"
+```text
+repository checks
+→ extraction
+→ artifact verification
+→ context viability audit
+→ numeric shortcut audit
 ```
 
-Audit an extracted episode artifact before creating model splits:
+It writes all artifacts under:
 
-```powershell
-.\scripts\14-context-viability-audit.ps1 `
-  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
-  -OutputDirectory artifacts\newsedits\viability-5000
+```text
+artifacts/newsedits/blog-evidence/
 ```
 
-See [`scripts/README.md`](scripts/README.md) for every script and parameter.
+Individual stages remain runnable through the numbered scripts in [`scripts/`](scripts/README.md).
 
 ## Current viability checkpoint
 
@@ -105,6 +106,8 @@ The first 5,000-article deterministic NYT extraction produced:
 
 The context audit freezes descriptive checks for target balance, candidate orientation, lineage concentration, context availability, source-boundary artifacts, exact candidate-pair reversals, similarity bands, sentence-position bands and article-version bands.
 
+The numeric audit identifies changed values, number-only edits, number-dominant edits, date/update changes, money and percentages, sports values, casualty-count changes and repeated numeric trajectories. These flags become mandatory controls in the later transfer experiment.
+
 ## Repository sequence
 
 ```text
@@ -113,10 +116,12 @@ The context audit freezes descriptive checks for target balance, candidate orien
 3. Official split_sentences input   done
 4. PowerShell run scripts           done
 5. Context viability audit          implemented
-6. Grouped split manifests          next
-7. Preference-task baselines
-8. Frozen representation transfer
-9. Sample-efficiency and shortcut controls
+6. Numeric shortcut audit           implemented
+7. Executable blog and claim ledger implemented
+8. Grouped split manifests          next
+9. Preference-task baselines
+10. Frozen representation transfer
+11. Sample-efficiency controls
 ```
 
 ## Development
