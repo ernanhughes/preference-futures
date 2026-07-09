@@ -19,7 +19,7 @@ def _fixture_records() -> tuple[list[dict[str, object]], dict[str, dict[str, obj
             episode_id = f"{lineage_id}::{episode_index}"
             future_revised = (lineage_index + episode_index) % 4 == 0
             selected_index = (lineage_index + episode_index) % 2
-            number_changed = (lineage_index + episode_index) % 7 == 0
+            number_changed = (lineage_index + episode_index) % 4 == 0
             number_dominant = number_changed and episode_index % 2 == 0
             casualty = number_changed and lineage_index % 11 == 0
             records.append(
