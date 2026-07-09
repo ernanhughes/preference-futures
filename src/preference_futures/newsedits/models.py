@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -38,12 +39,13 @@ class SplitSentenceSchema:
 
 @dataclass(frozen=True, slots=True)
 class ArticleVersion:
-    """One reconstructed article version loaded from SQLite."""
+    """One article version loaded or reconstructed from SQLite."""
 
     source: str
     article_id: str
     version_id: str
     text: str
+    sentences: tuple[str, ...] | None = None
     created: str | None = None
     title: str = ""
 
@@ -93,23 +95,49 @@ class ExclusionReason(StrEnum):
 
 @dataclass(slots=True)
 class ExtractionAudit:
-    """Survival-funnel counts produced alongside extraction."""
+    """Survival-funnel and target-balance counts produced alongside extraction."""
 
     articles_seen: int = 0
+    articles_with_examples: int = 0
     version_windows_seen: int = 0
     replacement_opcodes_seen: int = 0
     accepted_examples: int = 0
+    future_revised_examples: int = 0
+    future_stable_examples: int = 0
     exclusions: Counter[str] = field(default_factory=Counter)
 
     def exclude(self, reason: ExclusionReason, count: int = 1) -> None:
         self.exclusions[reason.value] += count
 
+    def finalize(self, examples: Sequence[NewsEditsExample]) -> None:
+        """Derive final counts after duplicate removal and output limiting."""
+
+        self.accepted_examples = len(examples)
+        self.articles_with_examples = len({example.triplet.lineage_id for example in examples})
+        self.future_revised_examples = sum(example.future_revised for example in examples)
+        self.future_stable_examples = self.accepted_examples - self.future_revised_examples
+
     def to_record(self) -> dict[str, object]:
+        acceptance_rate = (
+            self.accepted_examples / self.replacement_opcodes_seen
+            if self.replacement_opcodes_seen
+            else 0.0
+        )
+        future_revised_rate = (
+            self.future_revised_examples / self.accepted_examples
+            if self.accepted_examples
+            else 0.0
+        )
         return {
             "articles_seen": self.articles_seen,
+            "articles_with_examples": self.articles_with_examples,
             "version_windows_seen": self.version_windows_seen,
             "replacement_opcodes_seen": self.replacement_opcodes_seen,
             "accepted_examples": self.accepted_examples,
+            "acceptance_rate": acceptance_rate,
+            "future_revised_examples": self.future_revised_examples,
+            "future_stable_examples": self.future_stable_examples,
+            "future_revised_rate": future_revised_rate,
             "exclusions": dict(sorted(self.exclusions.items())),
         }
 
@@ -130,6 +158,12 @@ class NewsEditsExample:
     sentence_position: float
     edit_similarity: float
     lexical_jaccard: float
+
+    @property
+    def future_revised(self) -> bool:
+        """Return whether the selected V1 sentence changed or disappeared in V2."""
+
+        return self.build_episode(seed=0).future_revised
 
     def build_episode(self, *, seed: int) -> PreferenceEpisode:
         return build_preference_episode(self.triplet, seed=seed)

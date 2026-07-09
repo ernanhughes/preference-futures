@@ -72,7 +72,7 @@ def extract_article_examples(
         audit.exclude(ExclusionReason.TOO_FEW_VERSIONS)
         return ()
 
-    split_versions = [sentence_split(version.text) for version in versions]
+    split_versions = [_sentences_for_version(version) for version in versions]
     examples: list[NewsEditsExample] = []
     for version_index in range(len(versions) - 2):
         audit.version_windows_seen += 1
@@ -240,8 +240,16 @@ def _extract_version_stream(
             seen_episode_ids.add(example.triplet.episode_id)
             examples.append(example)
             if max_examples > 0 and len(examples) >= max_examples:
-                audit.accepted_examples = len(examples)
+                audit.finalize(examples)
                 return ExtractionResult(examples=tuple(examples), audit=audit)
 
-    audit.accepted_examples = len(examples)
+    audit.finalize(examples)
     return ExtractionResult(examples=tuple(examples), audit=audit)
+
+
+def _sentences_for_version(version: ArticleVersion) -> list[str]:
+    """Use official sentence rows when available; split only full article text."""
+
+    if version.sentences is not None:
+        return list(version.sentences)
+    return sentence_split(version.text)
