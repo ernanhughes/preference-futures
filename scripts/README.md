@@ -6,7 +6,7 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 
 | Script | Purpose |
 |---|---|
-| `00-setup.ps1` | Create the virtual environment and install development dependencies. |
+| `00-setup.ps1` | Create the virtual environment; add `-Training` for PyTorch and Transformers. |
 | `01-check.ps1` | Parse all PowerShell files, then run pytest and Ruff. |
 | `02-parse-powershell.ps1` | Validate the syntax of every PowerShell script. |
 | `10-newsedits-inspect.ps1` | Inspect SQLite tables and detect the NewsEdits schema. |
@@ -21,6 +21,10 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | `41-verify-grouped-splits.ps1` | Independently verify an existing grouped-split manifest. |
 | `50-build-compute-matched-corpora.ps1` | Build and verify the six Step 2 source-task corpora. |
 | `51-verify-compute-matched-corpora.ps1` | Independently verify persisted Step 2 corpus artifacts. |
+| `60-prepare-fixed-budget-training.ps1` | Resolve the immutable model revision and freeze Step 3. |
+| `61-step3-smoke.ps1` | Run two non-confirmatory updates for all six regimes on fold 0. |
+| `62-train-fixed-budget-representations.ps1` | Run resumable confirmatory Step 3 training. |
+| `63-verify-fixed-budget-training.ps1` | Verify persisted confirmatory model runs and budgets. |
 | `_common.ps1` | Shared internal helpers; do not run directly. |
 
 ## Setup and repository checks
@@ -30,10 +34,17 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 .\scripts\01-check.ps1
 ```
 
+Install the optional Step 3 model stack:
+
+```powershell
+.\scripts\00-setup.ps1 -Training
+```
+
 Recreate the environment when necessary:
 
 ```powershell
 .\scripts\00-setup.ps1 -Recreate
+.\scripts\00-setup.ps1 -Recreate -Training
 ```
 
 Run PowerShell parsing alone:
@@ -173,15 +184,101 @@ The Step 2 gates require:
 
 On a canonical V0→V1 episode, the retained sentence is also the newer sentence. An exact-pair temporal target would therefore duplicate the authentic target rather than provide an independent control.
 
-Step 2 resolves this by extracting temporal-direction examples from other NewsEdits article lineages that never enter the preference-future evaluation set. Increase `-TemporalMaxArticles` when the external pool cannot meet the frozen train and validation budgets; do not lower the target merely to make the command pass.
+Step 2 resolves this by extracting temporal-direction examples from other NewsEdits article lineages that never enter the preference-future evaluation set.
 
-### Record matching versus compute matching
+## Step 3: fixed-budget representation training
 
-Step 2 matches source-record counts and records approximate text exposure. Step 3 must enforce actual compute equality using one fixed encoder checkpoint, tokenizer, maximum sequence length, padding policy, batch size, optimiser, learning-rate schedule, update count, precision and checkpoint rule.
+### Prepare one immutable model snapshot
 
-The detailed protocols are:
+```powershell
+.\scripts\60-prepare-fixed-budget-training.ps1 `
+  -CorporaDirectory artifacts\transfer\corpora `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -OutputDirectory artifacts\transfer\training `
+  -ModelId "distilbert/distilbert-base-uncased" `
+  -ModelRevision "main" `
+  -Seed 17 `
+  -MaximumSequenceLength 256 `
+  -BatchSize 16 `
+  -UpdateSteps 600
+```
 
-- [`docs/experiments/01-grouped-split-manifests.md`](../docs/experiments/01-grouped-split-manifests.md)
-- [`docs/experiments/02-compute-matched-corpora.md`](../docs/experiments/02-compute-matched-corpora.md)
+Preparation:
 
-The matching publication blocks are under [`docs/blog/blocks/`](../docs/blog/blocks/).
+```text
+reruns persisted Step 2 verification
+→ checks episode and temporal hashes
+→ resolves the model revision to an immutable commit
+→ saves one local encoder/tokenizer snapshot
+→ hashes the full snapshot
+→ freezes all 60 fold/regime jobs
+→ writes contract.json and training-plan.md
+```
+
+Default confirmatory budget:
+
+```text
+600 updates × 16 examples × 256 padded positions
+= 2,457,600 padded encoder token positions per job
+```
+
+Every job uses FP32, fixed max-length padding, AdamW, the same learning-rate schedule and final update 600. Validation is diagnostic only. Early stopping is forbidden.
+
+### Run the six-regime smoke test
+
+```powershell
+.\scripts\61-step3-smoke.ps1 `
+  -TrainingDirectory artifacts\transfer\training `
+  -Device auto `
+  -SmokeSteps 2
+```
+
+The smoke command runs all six objectives on fold 0 and then verifies the six persisted model artifacts. Smoke outputs are stored under `smoke-runs/`, marked non-confirmatory and cannot satisfy the full verifier.
+
+### Run one complete fold
+
+```powershell
+.\scripts\62-train-fixed-budget-representations.ps1 `
+  -TrainingDirectory artifacts\transfer\training `
+  -Folds 0 `
+  -Regimes all `
+  -Device auto `
+  -VerifyWhenComplete
+```
+
+### Run or resume all sixty jobs
+
+```powershell
+.\scripts\62-train-fixed-budget-representations.ps1 `
+  -TrainingDirectory artifacts\transfer\training `
+  -Folds all `
+  -Regimes all `
+  -Device auto
+```
+
+Completed jobs are skipped only when their contract and model hashes still match. Use `-Force` to deliberately replace an invalid or changed run.
+
+### Verify the full confirmatory set
+
+```powershell
+.\scripts\63-verify-fixed-budget-training.ps1 `
+  -TrainingDirectory artifacts\transfer\training `
+  -Folds all `
+  -Regimes all
+```
+
+The verifier requires:
+
+- all selected jobs to exist;
+- the frozen contract and source hashes to match;
+- the same base encoder snapshot for every job;
+- equal update and padded-token budgets within each fold;
+- the fixed final-checkpoint rule;
+- no source-task early stopping;
+- finite validation metrics;
+- persisted task-model, encoder and tokenizer hashes to survive reopening;
+- one device type for the selected comparison set.
+
+The complete Step 3 protocol is [`docs/experiments/03-fixed-budget-representation-training.md`](../docs/experiments/03-fixed-budget-representation-training.md).
+
+The publication-facing blocks are under [`docs/blog/blocks/`](../docs/blog/blocks/).

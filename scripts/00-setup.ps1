@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$Recreate
+    [switch]$Recreate,
+    [switch]$Training
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -21,10 +22,20 @@ try {
         Invoke-CheckedCommand -FilePath $bootstrapPython -ArgumentList @("-m", "venv", $venvPath)
     }
 
+    $editableTarget = if ($Training) { ".[dev,train]" } else { ".[dev]" }
     Invoke-CheckedCommand -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "--upgrade", "pip")
-    Invoke-CheckedCommand -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "-e", ".[dev]")
+    Invoke-CheckedCommand -FilePath $venvPython -ArgumentList @(
+        "-m",
+        "pip",
+        "install",
+        "-e",
+        $editableTarget
+    )
 
     Write-Host "Setup complete. Python: $venvPython" -ForegroundColor Green
+    if ($Training) {
+        Write-Host "Step 3 PyTorch and Transformers dependencies installed." -ForegroundColor Green
+    }
 }
 finally {
     Pop-Location
