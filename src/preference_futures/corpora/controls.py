@@ -278,7 +278,6 @@ def _donor_mapping(
         )
 
     ids = [str(row["episode_id"]) for row in ordered]
-    lineages = [str(row["lineage_id"]) for row in ordered]
     shift = largest_group
     mapping = {
         ids[index]: ids[(index + shift) % len(ids)] for index in range(len(ids))
