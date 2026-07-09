@@ -276,18 +276,33 @@ def _interpretation(categories: Mapping[str, Mapping[str, Any]], *, total: int) 
     casualty = categories["casualty_count_update"]
     changed = categories["number_changed"]
     dominant = categories["number_dominant_edit"]
-    statements = []
-    if casualty["episode_rate"] < 0.02:
+    statements: list[str] = []
+
+    if casualty["episodes"] and casualty["episode_rate"] < 0.02:
         statements.append(
-            "Repeated casualty-style updates are present but too rare to dominate the complete dataset."
+            "Casualty-style updates are present but too rare to dominate the complete dataset."
         )
-    if changed["risk_ratio_vs_complement"] > 1.25:
+
+    risk_ratio = changed["risk_ratio_vs_complement"]
+    if risk_ratio is not None and risk_ratio > 1.25:
         statements.append(
-            "Changed numerical claims are substantially more likely than non-numeric edits to change again."
+            "Changed numerical claims are substantially more likely than non-numeric edits to "
+            "change again."
         )
+    elif (
+        risk_ratio is None
+        and changed["future_revised"] > 0
+        and changed["future_revised_rate_without_category"] == 0.0
+    ):
+        statements.append(
+            "Changed numerical claims contain revised outcomes while the complement contains none; "
+            "the risk ratio is undefined rather than finite."
+        )
+
     if dominant["episodes"]:
         statements.append(
-            "Number-dominant edits form a measurable shortcut class and require exclusion and masking ablations."
+            "Number-dominant edits form a measurable shortcut class and require exclusion and "
+            "masking ablations."
         )
     statements.append(
         "A surviving transfer result must outperform numeric-only and temporal-position baselines."
