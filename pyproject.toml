@@ -22,6 +22,7 @@ dev = [
 preference-futures-newsedits = "preference_futures.newsedits.cli:main"
 preference-futures-audit = "preference_futures.audit.cli:main"
 preference-futures-numeric-audit = "preference_futures.audit.numeric_cli:main"
+preference-futures-splits = "preference_futures.splits.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
