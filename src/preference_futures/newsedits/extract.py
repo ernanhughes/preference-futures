@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import difflib
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from preference_futures.episodes import RevisionTriplet
-from preference_futures.newsedits.database import iter_article_versions, sample_article_keys
+from preference_futures.newsedits.database import (
+    iter_article_versions,
+    iter_split_article_versions,
+    sample_article_keys,
+    sample_split_article_ids,
+)
 from preference_futures.newsedits.models import (
     ArticleSchema,
     ArticleVersion,
@@ -16,6 +21,7 @@ from preference_futures.newsedits.models import (
     ExtractionConfig,
     ExtractionResult,
     NewsEditsExample,
+    SplitSentenceSchema,
 )
 from preference_futures.newsedits.text import (
     lexical_jaccard,
@@ -170,10 +176,8 @@ def extract_from_database(
     seed: int = 0,
     sources: Sequence[str] = (),
 ) -> ExtractionResult:
-    """Extract examples and a complete audit from a NewsEdits SQLite database."""
+    """Extract examples from a full article-version table."""
 
-    config = config or ExtractionConfig()
-    audit = ExtractionAudit()
     keys = sample_article_keys(
         connection,
         schema,
@@ -181,11 +185,63 @@ def extract_from_database(
         seed=seed,
         sources=sources,
     )
+    return _extract_version_stream(
+        iter_article_versions(connection, schema, keys),
+        config=config,
+        max_examples=max_examples,
+    )
+
+
+def extract_from_split_database(
+    connection: sqlite3.Connection,
+    schema: SplitSentenceSchema,
+    *,
+    source_name: str,
+    config: ExtractionConfig | None = None,
+    max_articles: int = 0,
+    max_examples: int = 0,
+    seed: int = 0,
+) -> ExtractionResult:
+    """Extract examples from the official NewsEdits ``split_sentences`` table."""
+
+    selected_ids = sample_split_article_ids(
+        connection,
+        schema,
+        max_articles=max_articles,
+        seed=seed,
+    )
+    return _extract_version_stream(
+        iter_split_article_versions(
+            connection,
+            schema,
+            selected_ids,
+            source_name=source_name,
+        ),
+        config=config,
+        max_examples=max_examples,
+    )
+
+
+def _extract_version_stream(
+    version_stream: Iterable[tuple[tuple[str, str], tuple[ArticleVersion, ...]]],
+    *,
+    config: ExtractionConfig | None,
+    max_examples: int,
+) -> ExtractionResult:
+    config = config or ExtractionConfig()
+    audit = ExtractionAudit()
     examples: list[NewsEditsExample] = []
-    for _key, versions in iter_article_versions(connection, schema, keys):
-        examples.extend(extract_article_examples(versions, config=config, audit=audit))
-        if max_examples > 0 and len(examples) >= max_examples:
-            examples = examples[:max_examples]
-            audit.accepted_examples = len(examples)
-            break
+    seen_episode_ids: set[str] = set()
+
+    for _key, versions in version_stream:
+        for example in extract_article_examples(versions, config=config, audit=audit):
+            if example.triplet.episode_id in seen_episode_ids:
+                continue
+            seen_episode_ids.add(example.triplet.episode_id)
+            examples.append(example)
+            if max_examples > 0 and len(examples) >= max_examples:
+                audit.accepted_examples = len(examples)
+                return ExtractionResult(examples=tuple(examples), audit=audit)
+
+    audit.accepted_examples = len(examples)
     return ExtractionResult(examples=tuple(examples), audit=audit)
