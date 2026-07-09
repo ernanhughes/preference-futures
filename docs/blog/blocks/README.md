@@ -7,7 +7,7 @@ These sections extend the main draft as each representation experiment becomes e
 | Step | Block | Status |
 |---:|---|---|
 | 1 | [`step-01-grouped-splits.md`](step-01-grouped-splits.md) | Verified |
-| 2 | [`step-02-compute-matched-corpora.md`](step-02-compute-matched-corpora.md) | Implemented; awaiting real-data run |
+| 2 | [`step-02-compute-matched-corpora.md`](step-02-compute-matched-corpora.md) | Verified |
 
 ## Publication rule
 
@@ -18,7 +18,7 @@ docs/experiments/
 docs/results/
 ```
 
-Until then, result placeholders remain explicit and the prose describes what the step tests rather than claiming what it found.
+Step 2 now records 24,112 independent temporal pairs, 5,135 external lineages, 120 persisted corpus files and 651,024 verified source-task records, with every builder and persisted-verification gate passing.
 
 ## Current insertion point
 

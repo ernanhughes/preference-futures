@@ -14,7 +14,7 @@ This directory extends the blog into an executable sequence. Each step contains:
 | Step | Document | Status |
 |---:|---|---|
 | 1 | [Freeze article-grouped split manifests](01-grouped-split-manifests.md) | **Verified on 12,056 episodes / 3,386 lineages** |
-| 2 | [Build compute-matched source corpora](02-compute-matched-corpora.md) | **Implemented; awaiting real-data run** |
+| 2 | [Build compute-matched source corpora](02-compute-matched-corpora.md) | **Verified: 120 files / 651,024 persisted records** |
 | 3 | Train authentic and control representations | Next |
 | 4 | Verify source-task learning and freeze encoders | Planned |
 | 5 | Extract frozen representations | Planned |
@@ -35,6 +35,23 @@ numeric flags SHA-256: abf517a03760da77bf60029d3385887ec6d3b73bd7db7e3d74f238ead
 
 The compact result record is [`docs/results/step-01-grouped-splits.json`](../results/step-01-grouped-splits.json).
 
+## Frozen Step 2 identity
+
+```text
+preference episodes: 12,056
+evaluation lineages: 3,386
+independent temporal pairs: 24,112
+independent temporal lineages: 5,135
+evaluation-lineage overlap: 0
+expected corpus files: 120
+observed corpus files: 120
+persisted source-task records verified: 651,024
+```
+
+All builder and persisted-verification gates passed.
+
+The compact result record is [`docs/results/step-02-compute-matched-corpora.json`](../results/step-02-compute-matched-corpora.json).
+
 ## Step 2 comparison arms
 
 Six encoders receive additional source-task training:
@@ -51,6 +68,8 @@ authentic_preference
 The untouched pretrained encoder remains a seventh arm.
 
 The exact-pair authentic and temporal targets are identical on V0→V1 revision pairs. Step 2 therefore builds the temporal-direction corpus from separate NewsEdits article lineages that are disjoint from every future-evaluation lineage.
+
+The temporal arm is approximately 7% longer under the current whitespace-token audit. Step 3 must therefore enforce equal optimisation opportunity with a fixed tokenizer, sequence length, padding policy, batch size and update count.
 
 ## Rule
 

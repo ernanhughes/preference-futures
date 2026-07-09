@@ -1,0 +1,86 @@
+{
+  "step": 2,
+  "title": "Compute-matched source corpora",
+  "status": "verified",
+  "seed": 17,
+  "outer_folds": 10,
+  "dataset": {
+    "preference_episodes": 12056,
+    "evaluation_lineages": 3386,
+    "independent_temporal_pairs": 24112,
+    "independent_temporal_lineages": 5135,
+    "temporal_evaluation_lineage_overlap": 0
+  },
+  "corpora": [
+    "language_adaptation",
+    "pair_exposure",
+    "temporal_direction",
+    "random_label",
+    "shuffled_preference",
+    "authentic_preference"
+  ],
+  "fold_budgets": {
+    "train_records_per_corpus": [9645, 9643, 9645, 9646, 9645, 9645, 9645, 9644, 9644, 9646],
+    "validation_records_per_corpus": [1207, 1206, 1205, 1205, 1206, 1205, 1206, 1206, 1206, 1204],
+    "expected_corpus_files": 120,
+    "observed_corpus_files": 120,
+    "source_task_records_read": 651024
+  },
+  "exposure_audit": {
+    "authentic_language_random_and_shuffled_use_identical_episode_text": true,
+    "pair_exposure_mean_delta_is_negligible": true,
+    "temporal_direction_train_delta_percent": {
+      "minimum": 6.5112,
+      "maximum": 7.4736,
+      "mean": 7.0508
+    },
+    "temporal_direction_validation_delta_percent": {
+      "minimum": 3.7020,
+      "maximum": 10.7591,
+      "mean": 7.0872
+    },
+    "interpretation": "Record counts are exactly matched. The independent temporal corpus contains approximately seven percent more whitespace-token exposure than the authentic corpus. Step 3 must equalise actual optimisation compute through a fixed maximum sequence length, padding policy, batch size and update count."
+  },
+  "builder_gates": {
+    "all_six_corpora_have_equal_record_counts": true,
+    "no_preference_source_record_uses_test_lineages": true,
+    "no_source_task_record_contains_future_fields": true,
+    "random_labels_are_balanced": true,
+    "pair_exposure_labels_are_balanced": true,
+    "pair_exposure_negative_donors_cross_lineages": true,
+    "shuffled_preferences_preserve_label_counts": true,
+    "shuffled_preference_donors_cross_lineages": true,
+    "temporal_pairs_are_external_to_evaluation_lineages": true,
+    "temporal_direction_labels_are_balanced": true
+  },
+  "persisted_verification": {
+    "status": "pass",
+    "manifest_exists": true,
+    "six_expected_corpora_declared": true,
+    "all_builder_gates_passed": true,
+    "source_hashes_match_manifest": true,
+    "all_expected_corpus_files_exist": true,
+    "persisted_record_counts_match_manifest": true,
+    "record_identity_matches_file_path": true,
+    "no_persisted_source_record_contains_future_fields": true,
+    "source_ids_unique_within_each_corpus_file": true,
+    "temporal_pool_and_audit_exist": true,
+    "errors": []
+  },
+  "source_hashes": {
+    "episodes_sha256": "df4e40330ad6d3f6d4977e1630e2e54e3cfc06b01277d1aa98b7994e8c63e5ab",
+    "split_manifest_sha256": "77864f4e0efae5fd98e75998b15b03cab026913025fca6d708c3b433e7886faf",
+    "temporal_pairs_sha256": "6a93a3a2cb0d41f1f1e0941e3406e817fe2418ac870e02e3eb648d149e25ee92",
+    "newsedits_database_sha256": "1b81497d415b9dd86134f0871e73b6dde096bcd4d084f0f54ae942cb3db86ace"
+  },
+  "identification_note": {
+    "exact_pair_temporal_target_equals_authentic_target": true,
+    "resolution": "Temporal-direction supervision is drawn from separate NewsEdits lineages that never appear in future evaluation."
+  },
+  "limited_claim": "The authentic revision-choice objective and five trained alternatives were frozen before model training with equal source-record budgets, no direct future-label leakage and an independent temporal-control pool.",
+  "does_not_establish": [
+    "equal optimisation compute before the Step 3 trainer enforces it",
+    "that authentic preference training improves future prediction",
+    "that any future transfer is uniquely preference-specific rather than accepted-revision-specific"
+  ]
+}

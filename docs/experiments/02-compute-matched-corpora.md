@@ -8,7 +8,7 @@ Step 2 is a data-contract step. It does not train an encoder and it does not tes
 
 It freezes exactly what each source-task encoder will be trained to do.
 
-## The correction discovered while designing the temporal control
+## The temporal-control correction
 
 The first design proposed training temporal direction on the same V0→V1 pairs used for authentic preference prediction.
 
@@ -31,15 +31,11 @@ which candidate is newer?
 
 An exact-pair temporal-direction model would therefore receive the same inputs and labels as the authentic preference model. Renaming the target would not create a different experiment.
 
-Step 2 records this identification limit explicitly rather than hiding it.
+The independent temporal-direction corpus is instead extracted from other NewsEdits article lineages that never appear in the preference-future evaluation set. It uses the same publication domain and revision mechanism, but it cannot leak an evaluation article trajectory.
 
-The independent temporal-direction corpus is instead extracted from other NewsEdits article lineages that never appear in the preference-future evaluation set. It uses the same publication domain and revision mechanism, but it cannot leak any evaluation article trajectory.
-
-This does not fully identify a uniquely “preference-specific” mechanism. A positive final result must still be described as transfer from authentic revision-choice supervision unless it also beats this independent temporal representation and later survives broader datasets in which preference is not synonymous with chronological replacement.
+This does not fully identify a uniquely preference-specific mechanism. A later positive result must still be described as transfer from authentic revision-choice supervision unless it beats the independent temporal representation and generalises to datasets where preference is not synonymous with chronological replacement.
 
 ## Frozen inputs
-
-Step 2 consumes:
 
 ```text
 artifacts/newsedits/viability-5000/episodes.jsonl
@@ -56,38 +52,25 @@ The episode and split hashes from Step 1 remain authoritative. Step 2 does not c
 
 Six encoders receive additional source-task training. The untouched generic encoder is retained as a seventh comparison arm.
 
-### 1. Generic encoder
+### Generic encoder
 
-No additional training.
+No additional training. This arm has no Step 2 corpus.
 
-This arm has no Step 2 corpus.
-
-### 2. Compute-matched language adaptation
+### Compute-matched language adaptation
 
 The encoder receives the same canonical NewsEdits preference episodes, but the objective is deterministic masked-word reconstruction rather than preference prediction.
 
-Each record specifies:
-
-```text
-source episode ID
-serialised pair-and-context view
-whitespace-token count
-deterministic mask positions
-```
-
 This controls for additional NewsEdits language and domain adaptation.
 
-### 3. Pair-exposure representation
+### Pair-exposure representation
 
 The encoder predicts whether the two candidates originate from the same revision episode.
 
-Half the records retain the true candidate pair. Half replace candidate B with candidate B from a deterministic different-lineage donor episode. The donor mapping is a permutation, so the corpus still exposes the complete candidate inventory once per partition while removing preference supervision.
+Half the records retain the true candidate pair. Half replace candidate B with candidate B from a deterministic different-lineage donor episode. The donor mapping is a permutation, preserving complete candidate exposure while removing preference supervision.
 
-This controls for learning from revision-pair structure.
+### Independent temporal-direction representation
 
-### 4. Independent temporal-direction representation
-
-The encoder predicts which candidate is newer using one-to-one sentence replacements extracted from NewsEdits articles outside all 3,386 evaluation lineages.
+The encoder predicts which candidate is newer using one-to-one replacements extracted from NewsEdits articles outside all evaluation lineages.
 
 The temporal pool is:
 
@@ -97,31 +80,21 @@ The temporal pool is:
 - record-count matched to each authentic fold partition;
 - approximately matched to the authentic input-length distribution.
 
-This is the strongest available direct control for generic “newness detection” without duplicating the authentic labels on the exact same pairs.
-
-### 5. Random-label representation
+### Random-label representation
 
 The encoder sees the authentic pair-and-context inputs but receives deterministic balanced labels unrelated to the editor’s choice.
 
-This controls for additional optimisation through the same binary-classification path without meaningful supervision.
-
-### 6. Shuffled-preference representation
+### Shuffled-preference representation
 
 The encoder sees each authentic pair-and-context input, but its target is donated by a different episode from a different article lineage.
 
-The authentic label multiset is preserved exactly within every train and validation partition, while the link between the observed choice and its article state is broken.
+The authentic label multiset is preserved exactly within every train and validation partition while the link between choice and article state is broken.
 
-This controls for preference-shaped class balance and training dynamics without authentic decision alignment.
+### Authentic preference representation
 
-### 7. Authentic preference representation
-
-The encoder predicts which candidate the editor retained.
-
-It sees no V2 sentence, future-revision label or future outcome field.
+The encoder predicts which candidate the editor retained. It sees no V2 sentence, future-revision label or future outcome field.
 
 ## Reproduction command
-
-Run Step 2 only after Step 1 is verified:
 
 ```powershell
 .\scripts\50-build-compute-matched-corpora.ps1 `
@@ -145,8 +118,6 @@ validates the frozen Step 1 assignments
 → reopens every artifact and verifies it independently
 ```
 
-If the external temporal pool is too small, increase `-TemporalMaxArticles`. Do not reduce the temporal-pair target merely to force the step to pass.
-
 ## Output artifacts
 
 ```text
@@ -158,19 +129,21 @@ artifacts/transfer/corpora/
 ├── temporal-pairs.jsonl
 ├── temporal-pairs-audit.json
 ├── fold-00/
-│   ├── authentic_preference/
-│   │   ├── train.jsonl
-│   │   └── validation.jsonl
-│   ├── language_adaptation/
-│   ├── pair_exposure/
-│   ├── temporal_direction/
-│   ├── random_label/
-│   └── shuffled_preference/
+│   ├── authentic_preference/{train,validation}.jsonl
+│   ├── language_adaptation/{train,validation}.jsonl
+│   ├── pair_exposure/{train,validation}.jsonl
+│   ├── temporal_direction/{train,validation}.jsonl
+│   ├── random_label/{train,validation}.jsonl
+│   └── shuffled_preference/{train,validation}.jsonl
 ├── ...
 └── fold-09/
 ```
 
-The fold files are compact training instructions. They reference frozen source IDs instead of duplicating the article text.
+For ten folds, two source-task partitions and six trained regimes:
+
+```text
+10 × 2 × 6 = 120 corpus JSONL files
+```
 
 ## Forbidden leakage
 
@@ -187,9 +160,9 @@ v2_version_id
 
 The future target remains unavailable until the frozen source encoders are evaluated in the later probe stage.
 
-## Step 2 pass criteria
+## Frozen pass criteria
 
-The build passes only when all generated gates are true:
+The builder must establish:
 
 ```text
 all six trained corpora have equal record counts within every fold partition
@@ -216,19 +189,13 @@ future fields remain absent after writing
 external temporal pool and audit artifacts exist
 ```
 
-For ten folds, two partitions and six trained regimes:
-
-```text
-10 × 2 × 6 = 120 corpus JSONL files
-```
-
 ## What “compute matched” means here
 
-Step 2 matches the number of source-task records and records the approximate text exposure of every regime.
+Step 2 matches the number of source-task records and records approximate text exposure.
 
 That is necessary but not sufficient for equal compute.
 
-Step 3 must enforce the real compute contract:
+Step 3 must enforce:
 
 ```text
 same starting encoder checkpoint
@@ -247,62 +214,113 @@ no task-specific early stopping
 
 Different objectives produce different losses, but they must not receive different opportunities to update the encoder.
 
-## What a passing Step 2 proves
+## Verified result
 
-A passing result supports this limited claim:
+The seed-17 real-data run passed every builder and persisted-artifact gate.
 
-> The authentic preference source task and five trained alternatives have been materialised under the frozen article-grouped evaluation boundary with equal source-record budgets, no direct future-label leakage and an independent NewsEdits temporal-control pool.
+### Dataset and external temporal pool
 
-It does not prove that the regimes receive equal compute until Step 3 executes the frozen trainer contract.
+| Measure | Result |
+|---|---:|
+| Preference episodes | 12,056 |
+| Evaluation article lineages | 3,386 |
+| Independent temporal pairs | 24,112 |
+| Independent temporal lineages | 5,135 |
+| Evaluation-lineage overlap | 0 |
+| External articles selected | 20,000 |
+| External articles read before target reached | 6,849 |
+| Replacement opcodes examined | 44,840 |
 
-It does not prove that any representation predicts the future better.
-
-## What would fail or revise this step
-
-Step 2 must be revised before training if:
-
-- any source-task file contains a future or V2 field;
-- any fold’s test lineage enters preference-derived source training;
-- any trained regime receives a different record count;
-- temporal-control articles overlap the evaluation lineages;
-- shuffled or negative-pair donors remain in the same lineage;
-- the independent temporal pool cannot supply the required train and validation budgets;
-- persisted verification disagrees with the in-memory builder gates.
-
-## Results
-
-### Result status
+The temporal extractor reached exactly twice the preference-episode count, and all three temporal-pool gates passed:
 
 ```text
-PENDING LOCAL RUN
+target pair count reached
+temporal lineages disjoint from evaluation
+temporal pair IDs unique
 ```
 
-### Values to record
+### Fold budgets
 
-Copy the generated values from:
+Each trained regime receives the same record count inside a given fold partition.
 
 ```text
-artifacts/transfer/corpora/corpus-summary.md
-artifacts/transfer/corpora/corpus-verification.md
-artifacts/transfer/corpora/temporal-pairs-audit.json
+train records per corpus:      9,643–9,646
+validation records per corpus: 1,204–1,207
 ```
 
-Record:
+Across all folds, partitions and trained regimes, the verifier read:
 
 ```text
-external temporal pairs extracted
-external temporal article lineages
-corpus files written
-records per train corpus by fold
-records per validation corpus by fold
-minimum and maximum exposure-token estimates
-all builder gates
-all persisted-verification gates
-source artifact hashes
+651,024 persisted source-task records
 ```
+
+### Persisted verification
+
+```text
+120 expected corpus files
+120 observed corpus files
+all source hashes matched
+all record counts matched
+all record identities matched their paths
+all source IDs were unique within each file
+no future or V2 field was present
+no verification errors
+```
+
+### Exposure audit
+
+The authentic, language-adaptation, random-label and shuffled-preference regimes use the same episode text and therefore have identical whitespace-token exposure within each partition.
+
+Pair-exposure differs only through its cross-lineage candidate-B substitutions; its mean exposure difference from authentic preference is negligible.
+
+The external temporal-direction corpus is longer:
+
+```text
+train exposure above authentic:
+  minimum 6.5112%
+  maximum 7.4736%
+  mean    7.0508%
+
+validation exposure above authentic:
+  minimum 3.7020%
+  maximum 10.7591%
+  mean    7.0872%
+```
+
+This is not a Step 2 failure because record budgets, lineage separation and labels are correct. It is a Step 3 constraint: fixed maximum sequence length, padding, batch size and update count must prevent the temporal arm from receiving more optimisation compute merely because its sentences are longer.
+
+### Frozen source identities
+
+```text
+episodes SHA-256:
+df4e40330ad6d3f6d4977e1630e2e54e3cfc06b01277d1aa98b7994e8c63e5ab
+
+split manifest SHA-256:
+77864f4e0efae5fd98e75998b15b03cab026913025fca6d708c3b433e7886faf
+
+temporal pairs SHA-256:
+6a93a3a2cb0d41f1f1e0941e3406e817fe2418ac870e02e3eb648d149e25ee92
+
+NewsEdits database SHA-256:
+1b81497d415b9dd86134f0871e73b6dde096bcd4d084f0f54ae942cb3db86ace
+```
+
+The compact machine-readable record is [`docs/results/step-02-compute-matched-corpora.json`](../results/step-02-compute-matched-corpora.json).
+
+## Supported claim
+
+The verified result supports this limited statement:
+
+> The authentic revision-choice objective and five trained alternatives were frozen before model training with equal source-record budgets, no direct future-label leakage and an independent temporal-control pool.
+
+It does not prove equal optimisation compute before Step 3 enforces the trainer contract.
+
+It does not prove that authentic preference training improves future prediction.
+
+It does not prove that any later transfer is uniquely preference-specific rather than accepted-revision-specific.
 
 ## Next step
 
-Step 3 implements one trainer that consumes these manifests and trains all six additional encoders under the same fixed optimisation budget.
+Step 3 implements one trainer that consumes these frozen manifests and trains all six additional encoders under the same optimisation budget.
 
 The trainer must not inspect future labels, future-probe scores or test-fold outcomes while selecting source-task checkpoints.
