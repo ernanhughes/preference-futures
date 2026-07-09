@@ -1,0 +1,94 @@
+{
+  "status": "verified",
+  "step": 4,
+  "contract_sha256": "6abece65628b3e3071c2ab27df41e21ed163656a59ef023e971191c5322511b2",
+  "manifest_sha256": "9ed4cb44d6582d4b2c2f73f6b515c82207180c3220ba106c880c55e62361ac4a",
+  "source_task_summary_sha256": "f28a9f65528e7410f374e122d33df345075611a77147f501de6e1c7593181e6f",
+  "counts": {
+    "folds": 10,
+    "arms_per_fold": 7,
+    "entries": 70,
+    "eligible_entries": 70,
+    "trained_encoders": 60,
+    "unique_trained_encoder_hashes": 60,
+    "generic_entries": 10,
+    "unique_generic_encoder_hashes": 1,
+    "trained_base_hash_collisions": 0
+  },
+  "aggregate": {
+    "language_adaptation": {
+      "accuracy": 0.44926452063024475,
+      "mean_loss": 3.710544388359694,
+      "perplexity": 40.87605291850163,
+      "source_task_status": "learned",
+      "fold_status_counts": {
+        "learned": 10
+      }
+    },
+    "pair_exposure": {
+      "records": 12056,
+      "correct": 11972,
+      "accuracy": 0.9930325149303252,
+      "mean_loss": 0.033325175255171334,
+      "source_task_status": "learned_above_prior",
+      "fold_status_counts": {
+        "learned_above_prior": 10
+      }
+    },
+    "temporal_direction": {
+      "records": 12056,
+      "correct": 5958,
+      "accuracy": 0.49419376244193763,
+      "mean_loss": 0.6933194861340064,
+      "source_task_status": "null_like",
+      "fold_status_counts": {
+        "null_like": 10
+      }
+    },
+    "random_label": {
+      "records": 12056,
+      "correct": 5994,
+      "accuracy": 0.4971798274717983,
+      "mean_loss": 0.6933444424840735,
+      "source_task_status": "null_like",
+      "fold_status_counts": {
+        "null_like": 10
+      }
+    },
+    "shuffled_preference": {
+      "records": 12056,
+      "correct": 6068,
+      "accuracy": 0.5033178500331785,
+      "mean_loss": 0.693598597702912,
+      "source_task_status": "null_like_aggregate",
+      "fold_status_counts": {
+        "null_like": 9,
+        "below_prior": 1
+      },
+      "below_prior_fold": 5
+    },
+    "authentic_preference": {
+      "records": 12056,
+      "correct": 6059,
+      "accuracy": 0.5025713337757134,
+      "mean_loss": 0.693360756996181,
+      "source_task_status": "null_like",
+      "fold_status_counts": {
+        "null_like": 10
+      }
+    }
+  },
+  "selection_policy": {
+    "rule": "Downstream eligibility is determined by mechanical artifact validity, not by source-task success. Source-task results remain diagnostic labels.",
+    "checkpoint_selection": "fixed final update 600 only",
+    "post_result_retraining": false
+  },
+  "supported_claim": "All mechanically valid Step 3 encoders were independently re-hashed, diagnosed against task-appropriate source baselines and frozen in a seven-arm, ten-fold manifest without using source-task success to select favourable downstream arms.",
+  "interpretation": {
+    "pair_exposure_learned": true,
+    "language_adaptation_operationally_healthy": true,
+    "temporal_direction_learned": false,
+    "authentic_preference_learned": false,
+    "future_transfer_tested": false
+  }
+}
