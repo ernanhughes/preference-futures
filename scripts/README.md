@@ -19,6 +19,7 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | `30-reproduce-blog-evidence.ps1` | Run the complete extraction, context and numeric evidence chain used by the blog. |
 | `40-build-grouped-splits.ps1` | Freeze deterministic article-lineage grouped train, validation and test manifests, then verify them. |
 | `41-verify-grouped-splits.ps1` | Independently verify an existing persisted grouped split manifest. |
+| `50-build-training-corpora.ps1` | Build compute-matched source-task corpora from the frozen split manifest. |
 | `_common.ps1` | Shared internal helpers; do not run directly. |
 
 ## First-time setup
@@ -197,5 +198,33 @@ Verify an existing manifest without rebuilding assignments:
 For outer fold `i`, test is bucket `i`, validation is bucket `(i + 1) mod 10`, and the remaining eight buckets train. Every article lineage is test exactly once and validation exactly once. The independent verifier checks the complete assignment-map size, valid fold IDs, agreement with test summaries, validation rotation, training complements, dataset-total arithmetic and source SHA-256 values.
 
 The detailed verified result is [`docs/experiments/01-grouped-split-manifests.md`](../docs/experiments/01-grouped-split-manifests.md). Its compact machine-readable record is [`docs/results/step-01-grouped-splits.json`](../docs/results/step-01-grouped-splits.json), and its publication block is [`docs/blog/blocks/step-01-grouped-splits.md`](../docs/blog/blocks/step-01-grouped-splits.md).
+
+## Step 2: build compute-matched training corpora
+
+Run this only after Step 1 is frozen and verified:
+
+```powershell
+.\scripts\50-build-training-corpora.ps1 `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -SplitManifestPath artifacts\transfer\splits\manifest.json `
+  -OutputDirectory artifacts\transfer\corpora `
+  -Seed 17
+```
+
+This writes six corpus trees plus a manifest and summary:
+
+```text
+artifacts/transfer/corpora/corpus-manifest.json
+artifacts/transfer/corpora/corpus-summary.md
+artifacts/transfer/corpora/authentic_preference/fold-00/train.jsonl
+artifacts/transfer/corpora/language_modeling_control/fold-00/train.jsonl
+artifacts/transfer/corpora/pair_exposure_control/fold-00/train.jsonl
+artifacts/transfer/corpora/temporal_direction_control/fold-00/train.jsonl
+artifacts/transfer/corpora/random_label_control/fold-00/train.jsonl
+artifacts/transfer/corpora/shuffled_preference_control/fold-00/train.jsonl
+...
+```
+
+All corpora consume the same article-lineage assignments, rows, serialized input text and fold partitions. Future labels are not written into corpus JSONL records. The detailed step is [`docs/experiments/02-compute-matched-training-corpora.md`](../docs/experiments/02-compute-matched-training-corpora.md), and its publication block is [`docs/blog/blocks/step-02-compute-matched-corpora.md`](../docs/blog/blocks/step-02-compute-matched-corpora.md).
 
 All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as training corpora, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
