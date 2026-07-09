@@ -80,17 +80,40 @@ Run the full extraction after the smoke output has been reviewed:
   -DatabasePath "E:\data\newsedits\nyt-matched-sentences.db"
 ```
 
+Audit an extracted episode artifact before creating model splits:
+
+```powershell
+.\scripts\14-context-viability-audit.ps1 `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -OutputDirectory artifacts\newsedits\viability-5000
+```
+
 See [`scripts/README.md`](scripts/README.md) for every script and parameter.
+
+## Current viability checkpoint
+
+The first 5,000-article deterministic NYT extraction produced:
+
+```text
+12,056 accepted preference episodes
+3,386 article lineages
+3,104 revised futures
+8,952 stable futures
+25.75% future-revision rate
+29.88% replacement-opcode acceptance rate
+```
+
+The context audit freezes descriptive checks for target balance, candidate orientation, lineage concentration, context availability, source-boundary artifacts, exact candidate-pair reversals, similarity bands, sentence-position bands and article-version bands.
 
 ## Repository sequence
 
 ```text
 1. Canonical episode contract       done
-2. NewsEdits source adapter         implemented
-3. Official split_sentences input   implemented
-4. PowerShell run scripts           implemented
-5. Context viability audit          next
-6. Grouped split manifests
+2. NewsEdits source adapter         done
+3. Official split_sentences input   done
+4. PowerShell run scripts           done
+5. Context viability audit          implemented
+6. Grouped split manifests          next
 7. Preference-task baselines
 8. Frozen representation transfer
 9. Sample-efficiency and shortcut controls

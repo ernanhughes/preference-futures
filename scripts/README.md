@@ -13,6 +13,7 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | `11-newsedits-smoke.ps1` | Extract a bounded sample and immediately verify its artifacts. |
 | `12-newsedits-full.ps1` | Extract the requested full or bounded production dataset. |
 | `13-newsedits-verify.ps1` | Stream-validate JSONL episodes against the extraction audit. |
+| `14-context-viability-audit.ps1` | Audit class balance, contexts, lineage concentration, artifacts and pair reversals. |
 | `20-current-smoke-pipeline.ps1` | Run checks, inspect the database, extract a smoke sample, and verify it. |
 | `_common.ps1` | Shared internal helpers; do not run directly. |
 
@@ -102,4 +103,23 @@ Use bounded values while tuning extraction rules:
   -AuditPath artifacts\newsedits\smoke\audit.json
 ```
 
-All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as the context audit, split manifests, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
+## Audit context viability
+
+Run this after extraction and verification, before creating train/test splits:
+
+```powershell
+.\scripts\14-context-viability-audit.ps1 `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -OutputDirectory artifacts\newsedits\viability-5000
+```
+
+This writes:
+
+```text
+artifacts/newsedits/viability-5000/context-viability.json
+artifacts/newsedits/viability-5000/context-viability.md
+```
+
+The audit records target balance, candidate-order balance, lineage concentration, context availability, residual source-boundary artifacts, boilerplate flags, exact candidate-pair reversals, similarity bands, sentence-position bands and V1-version bands. A nonzero exit code means at least one frozen viability gate failed.
+
+All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as split manifests, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
