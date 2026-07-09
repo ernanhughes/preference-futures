@@ -98,10 +98,7 @@ def materialize_record(
         pair = _required_source(store.temporal_pairs, source_id, "temporal pair")
         earlier = str(pair["earlier_text"])
         later = str(pair["later_text"])
-        if target == 1:
-            candidate_a, candidate_b = earlier, later
-        else:
-            candidate_a, candidate_b = later, earlier
+        candidate_a, candidate_b = (earlier, later) if target == 1 else (later, earlier)
         text = serialise_fields(
             context_before=str(pair.get("context_before", "")),
             candidate_a=candidate_a,
@@ -135,15 +132,17 @@ def serialise_episode(episode: dict[str, Any], *, candidate_b: str | None = None
 def serialise_fields(
     *, context_before: str, candidate_a: str, candidate_b: str, context_after: str
 ) -> str:
+    """Reproduce the exact Step 2 pair-and-context serialization."""
+
     return "\n".join(
         (
-            "Context before:",
+            "[CONTEXT_BEFORE]",
             context_before,
-            "Candidate A:",
+            "[CANDIDATE_A]",
             candidate_a,
-            "Candidate B:",
+            "[CANDIDATE_B]",
             candidate_b,
-            "Context after:",
+            "[CONTEXT_AFTER]",
             context_after,
         )
     )
@@ -197,19 +196,15 @@ def _index_projected_records(
     records: list[dict[str, Any]], *, key: str, allowed: tuple[str, ...]
 ) -> dict[str, dict[str, Any]]:
     indexed: dict[str, dict[str, Any]] = {}
+    optional = {"context_before", "context_after"}
     for record in records:
         identifier = str(record.get(key, ""))
         if not identifier or identifier in indexed:
             raise ValueError(f"missing or duplicate {key}: {identifier!r}")
-        missing = [field for field in allowed if field not in record and field not in {
-            "context_before",
-            "context_after",
-        }]
+        missing = [field for field in allowed if field not in record and field not in optional]
         if missing:
             raise ValueError(f"source {identifier} is missing allowed fields: {missing}")
-        indexed[identifier] = {
-            field: record.get(field, "") for field in allowed
-        }
+        indexed[identifier] = {field: record.get(field, "") for field in allowed}
     if not indexed:
         raise ValueError(f"source contains no records keyed by {key}")
     return indexed
