@@ -9,7 +9,7 @@ Research code for testing whether preference-specific learning transfers to pred
 - [Representation experiment steps](docs/experiments/README.md)
 - [PowerShell workflow index](scripts/README.md)
 
-The publication rule is simple: every sentence beginning with “we found” must map to a committed script and output artifact. Representation-transfer claims remain hypotheses until the grouped control experiment is implemented and run.
+The publication rule is simple: every sentence beginning with “we found” must map to a committed script and output artifact. Representation-transfer claims remain hypotheses until the frozen control experiment has been trained and evaluated.
 
 ## Episode contract
 
@@ -177,9 +177,75 @@ Every builder gate and every persisted-verification check passed. No preference-
 
 The exact-pair temporal target is identical to the authentic retained-candidate target on V0→V1 revision pairs. The independent temporal corpus is therefore extracted from other NewsEdits lineages that never appear in future evaluation.
 
-The temporal arm contains approximately 7% more whitespace-token exposure than authentic preference. Step 3 must therefore enforce actual equal compute with one fixed checkpoint, tokenizer, maximum sequence length, padding policy, batch size, optimiser, schedule and update count.
+The temporal arm contains approximately 7% more whitespace-token exposure than authentic preference.
 
 The complete result is frozen in [Step 2](docs/experiments/02-compute-matched-corpora.md) and [`docs/results/step-02-compute-matched-corpora.json`](docs/results/step-02-compute-matched-corpora.json).
+
+## Step 3: fixed-budget representation training implemented
+
+Install the optional model stack:
+
+```powershell
+.\scripts\00-setup.ps1 -Training
+```
+
+Freeze one immutable base snapshot and training contract:
+
+```powershell
+.\scripts\60-prepare-fixed-budget-training.ps1 `
+  -CorporaDirectory artifacts\transfer\corpora `
+  -EpisodesPath artifacts\newsedits\viability-5000\episodes.jsonl `
+  -OutputDirectory artifacts\transfer\training `
+  -ModelId "distilbert/distilbert-base-uncased" `
+  -ModelRevision "main" `
+  -Seed 17 `
+  -MaximumSequenceLength 256 `
+  -BatchSize 16 `
+  -UpdateSteps 600
+```
+
+The default confirmatory contract gives every trained fold/regime job:
+
+```text
+one frozen base encoder snapshot
+one tokenizer
+FP32 precision
+maximum length 256
+fixed max-length padding
+batch size 16
+600 optimizer updates
+2,457,600 padded encoder token positions
+one final checkpoint at update 600
+no source-task early stopping
+```
+
+Across ten folds and six trained regimes, Step 3 declares 60 jobs. The untouched base snapshot is the generic seventh arm.
+
+The runtime projects the future-bearing episode artifact through an allow-list before constructing batches. Future labels, V2 text and V2 identifiers are unavailable to the source-task trainer.
+
+Run the non-confirmatory six-regime smoke test first:
+
+```powershell
+.\scripts\61-step3-smoke.ps1 `
+  -TrainingDirectory artifacts\transfer\training `
+  -Device auto `
+  -SmokeSteps 2
+```
+
+Then run one complete fold before launching all jobs:
+
+```powershell
+.\scripts\62-train-fixed-budget-representations.ps1 `
+  -TrainingDirectory artifacts\transfer\training `
+  -Folds 0 `
+  -Regimes all `
+  -Device auto `
+  -VerifyWhenComplete
+```
+
+The complete protocol is [Step 3](docs/experiments/03-fixed-budget-representation-training.md). The publication block is [`docs/blog/blocks/step-03-fixed-budget-training.md`](docs/blog/blocks/step-03-fixed-budget-training.md).
+
+Step 3 matches padded encoder positions and encoder update opportunities. It does not claim exact total FLOPs because masked-language modelling uses a larger output head than binary classification.
 
 ## Repository sequence
 
@@ -193,9 +259,10 @@ The complete result is frozen in [Step 2](docs/experiments/02-compute-matched-co
 7. Executable blog and claim ledger implemented
 8. Grouped split manifests          verified and frozen
 9. Compute-matched source corpora   verified and frozen
-10. Preference and control training next
-11. Frozen representation transfer
-12. Sample-efficiency controls
+10. Fixed-budget representation trainer implemented; smoke next
+11. Source-task verification and encoder freeze
+12. Frozen representation transfer
+13. Sample-efficiency controls
 ```
 
 ## Development
@@ -204,4 +271,10 @@ The complete result is frozen in [Step 2](docs/experiments/02-compute-matched-co
 python -m pip install -e ".[dev]"
 pytest
 ruff check .
+```
+
+Install model training dependencies only when running Step 3:
+
+```bash
+python -m pip install -e ".[dev,train]"
 ```
