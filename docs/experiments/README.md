@@ -15,8 +15,8 @@ This directory extends the blog into an executable sequence. Each step contains:
 |---:|---|---|
 | 1 | [Freeze article-grouped split manifests](01-grouped-split-manifests.md) | **Verified on 12,056 episodes / 3,386 lineages** |
 | 2 | [Build compute-matched source corpora](02-compute-matched-corpora.md) | **Verified: 120 files / 651,024 persisted records** |
-| 3 | [Train six representations under one fixed budget](03-fixed-budget-representation-training.md) | **Implemented; awaiting model snapshot and smoke run** |
-| 4 | Verify source-task learning and freeze encoders | Next after Step 3 run |
+| 3 | [Train six representations under one fixed budget](03-fixed-budget-representation-training.md) | **Verified: 60/60 confirmatory jobs passed** |
+| 4 | [Diagnose source tasks and freeze encoders](04-source-task-diagnostics-and-encoder-freeze.md) | **Implemented; local artifact generation next** |
 | 5 | Extract frozen representations | Planned |
 | 6 | Train identical future probes | Planned |
 | 7 | Run metadata and numeric-only baselines | Planned |
@@ -71,13 +71,12 @@ The exact-pair authentic and temporal targets are identical on V0→V1 revision 
 
 The temporal arm is approximately 7% longer under the whitespace-token audit.
 
-## Step 3 fixed optimisation boundary
+## Verified Step 3 optimisation boundary
 
-The Step 3 confirmatory defaults are frozen before model training:
+The Step 3 confirmatory contract was executed without modification:
 
 ```text
 base model: distilbert/distilbert-base-uncased
-resolved revision: immutable Hugging Face commit
 precision: FP32
 maximum length: 256
 padding: max_length
@@ -85,17 +84,34 @@ batch size: 16
 updates per job: 600
 trained jobs: 60
 padded token positions per job: 2,457,600
+padded token positions total: 147,456,000
 checkpoint: final update 600
 source-task early stopping: forbidden
 ```
 
+The all-fold verifier observed 60/60 complete jobs, one CUDA device type, one runtime environment, matching source and artifact hashes, finite validation metrics and no errors.
+
+Pair exposure learned strongly. Temporal direction and authentic preference remained null-like alongside random-label and shuffled-preference controls. This is a source-task result, not a future-transfer result.
+
 Step 3 matches encoder update opportunity rather than claiming exact total FLOPs. The masked-language-model head is larger than the five binary heads, and that limitation remains explicit.
 
-The future-bearing episode artifact is projected through a strict source allow-list before batches are created. Future labels and V2 fields are unavailable to the source-task runtime.
+## Step 4 freeze policy
+
+Step 4 separates:
+
+```text
+artifact validity
+source-task learning
+future-probe eligibility
+```
+
+Mechanically valid preregistered arms remain eligible even when their source classifier is null-like. This prevents post-result control removal and preserves the central transfer question for Steps 5 and 6.
+
+The future-bearing episode artifact remains unavailable during Steps 3 and 4.
 
 ## Rule
 
-A later step must consume the committed artifacts from the earlier step. It must not silently regenerate splits, labels, shortcut flags, temporal pools, corpus assignments, model snapshots or training contracts after observing downstream outcomes.
+A later step must consume the committed artifacts from the earlier step. It must not silently regenerate splits, labels, shortcut flags, temporal pools, corpus assignments, model snapshots, training contracts or encoder-selection manifests after observing downstream outcomes.
 
 The publication-facing prose fragments live under:
 
