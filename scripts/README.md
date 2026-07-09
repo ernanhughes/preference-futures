@@ -7,7 +7,8 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | Script | Purpose |
 |---|---|
 | `00-setup.ps1` | Create `.venv` and install the project with development dependencies. |
-| `01-check.ps1` | Run pytest and Ruff. |
+| `01-check.ps1` | Parse all PowerShell files, then run pytest and Ruff. |
+| `02-parse-powershell.ps1` | Standalone syntax validation for every PowerShell script. |
 | `10-newsedits-inspect.ps1` | Inspect SQLite tables and detect the NewsEdits article schema. |
 | `11-newsedits-smoke.ps1` | Extract a bounded sample and immediately verify its artifacts. |
 | `12-newsedits-full.ps1` | Extract the requested full or bounded production dataset. |
@@ -28,6 +29,14 @@ Recreate the virtual environment:
 ```
 
 ## Validate the repository
+
+Parse PowerShell only:
+
+```powershell
+.\scripts\02-parse-powershell.ps1
+```
+
+Run all repository checks:
 
 ```powershell
 .\scripts\01-check.ps1
@@ -93,4 +102,4 @@ Use bounded values while tuning extraction rules:
   -AuditPath artifacts\newsedits\smoke\audit.json
 ```
 
-New numbered scripts will be added as the context audit, split manifests, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
+All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as the context audit, split manifests, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.

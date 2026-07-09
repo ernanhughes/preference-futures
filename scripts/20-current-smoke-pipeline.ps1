@@ -12,8 +12,10 @@ param(
     [switch]$SkipChecks
 )
 
+. "$PSScriptRoot\_common.ps1"
+
 if (-not $SkipChecks) {
-    & "$PSScriptRoot\01-check.ps1"
+    Invoke-CheckedScript -ScriptPath "$PSScriptRoot\01-check.ps1"
 }
 
 $inspectArguments = @{
@@ -22,7 +24,9 @@ $inspectArguments = @{
 if (-not [string]::IsNullOrWhiteSpace($Table)) {
     $inspectArguments.Table = $Table
 }
-& "$PSScriptRoot\10-newsedits-inspect.ps1" @inspectArguments
+Invoke-CheckedScript `
+    -ScriptPath "$PSScriptRoot\10-newsedits-inspect.ps1" `
+    -Parameters $inspectArguments
 
 $smokeArguments = @{
     DatabasePath = $DatabasePath
@@ -35,6 +39,8 @@ $smokeArguments = @{
 if (-not [string]::IsNullOrWhiteSpace($Table)) {
     $smokeArguments.Table = $Table
 }
-& "$PSScriptRoot\11-newsedits-smoke.ps1" @smokeArguments
+Invoke-CheckedScript `
+    -ScriptPath "$PSScriptRoot\11-newsedits-smoke.ps1" `
+    -Parameters $smokeArguments
 
 Write-Host "Current smoke pipeline completed successfully." -ForegroundColor Green
