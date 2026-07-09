@@ -16,6 +16,7 @@ from preference_futures.training.data import (
     deterministic_training_batches,
     load_source_store,
     materialize_record,
+    serialise_episode,
 )
 
 
@@ -79,6 +80,7 @@ def test_source_store_redacts_future_fields_and_materializes_controls(tmp_path: 
     assert isinstance(authentic, ClassificationExample)
     assert authentic.target == 1
     assert "The retained sentence." in authentic.text
+    assert authentic.text.startswith("[CONTEXT_BEFORE]\n")
 
     negative_pair = materialize_record(
         {
@@ -101,18 +103,7 @@ def test_source_store_redacts_future_fields_and_materializes_controls(tmp_path: 
         "It was expected Monday."
     )
 
-    words = "\n".join(
-        (
-            "Context before:",
-            "Before.",
-            "Candidate A:",
-            "The earlier sentence.",
-            "Candidate B:",
-            "The retained sentence.",
-            "Context after:",
-            "After.",
-        )
-    ).split()
+    words = serialise_episode(store.episodes["one"]).split()
     language = materialize_record(
         {
             "corpus": "language_adaptation",
@@ -123,6 +114,7 @@ def test_source_store_redacts_future_fields_and_materializes_controls(tmp_path: 
     )
     assert isinstance(language, MaskedLanguageExample)
     assert language.mask_word_indices == (1, len(words) - 1)
+    assert language.words == tuple(words)
 
 
 def test_training_batches_are_fixed_size_deterministic_and_cycle() -> None:
