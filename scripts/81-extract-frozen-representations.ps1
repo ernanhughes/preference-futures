@@ -2,7 +2,7 @@
 param(
     [string]$RepresentationDirectory = "artifacts\transfer\representations",
     [string]$Folds = "all",
-    [string]$Arms = "all",
+    [string[]]$Arms = @("all"),
     [string]$Device = "auto",
     [switch]$Force,
     [switch]$VerifyWhenComplete
@@ -15,6 +15,7 @@ $contract = Resolve-RequiredFile `
     -Path (Join-Path $RepresentationDirectory "contract.json") `
     -Label "Step 5 representation contract"
 $representationRoot = Split-Path -Parent $contract
+$armSelection = $Arms -join ","
 
 $arguments = @(
     "-m",
@@ -25,7 +26,7 @@ $arguments = @(
     "--folds",
     $Folds,
     "--arms",
-    $Arms,
+    $armSelection,
     "--device",
     $Device
 )
@@ -39,6 +40,6 @@ if ($VerifyWhenComplete) {
     Invoke-CheckedScript -ScriptPath "$PSScriptRoot\82-verify-frozen-representations.ps1" -Parameters @{
         RepresentationDirectory = $representationRoot
         Folds = $Folds
-        Arms = $Arms
+        Arms = $armSelection
     }
 }

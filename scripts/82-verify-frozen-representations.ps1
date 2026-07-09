@@ -2,7 +2,7 @@
 param(
     [string]$RepresentationDirectory = "artifacts\transfer\representations",
     [string]$Folds = "all",
-    [string]$Arms = "all"
+    [string[]]$Arms = @("all")
 )
 
 . "$PSScriptRoot\_common.ps1"
@@ -12,6 +12,7 @@ $contract = Resolve-RequiredFile `
     -Path (Join-Path $RepresentationDirectory "contract.json") `
     -Label "Step 5 representation contract"
 $representationRoot = Split-Path -Parent $contract
+$armSelection = $Arms -join ","
 
 Invoke-CheckedCommand -FilePath $python -ArgumentList @(
     "-m",
@@ -22,5 +23,5 @@ Invoke-CheckedCommand -FilePath $python -ArgumentList @(
     "--folds",
     $Folds,
     "--arms",
-    $Arms
+    $armSelection
 )
