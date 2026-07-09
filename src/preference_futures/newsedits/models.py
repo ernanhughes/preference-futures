@@ -163,7 +163,10 @@ class NewsEditsExample:
     def future_revised(self) -> bool:
         """Return whether the selected V1 sentence changed or disappeared in V2."""
 
-        return self.build_episode(seed=0).future_revised
+        future = self.triplet.v2_sentence
+        return future is None or " ".join(future.split()) != " ".join(
+            self.triplet.v1_sentence.split()
+        )
 
     def build_episode(self, *, seed: int) -> PreferenceEpisode:
         return build_preference_episode(self.triplet, seed=seed)
