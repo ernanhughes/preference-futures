@@ -8,7 +8,7 @@ import math
 import re
 import statistics
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +32,6 @@ _REQUIRED_FIELDS = {
     "edit_similarity",
     "lexical_jaccard",
 }
-
 _HONORIFIC_ONLY = re.compile(
     r'^[“"(\[]?(?:Mr|Mrs|Ms|Dr|Gen|Gov|Col|Lt|Capt|Adm|Sgt|Cpl|Sen|Rep|Prof|St)\.$',
     re.IGNORECASE,
@@ -81,27 +80,15 @@ def build_context_viability_report(
 
     episodes = len(records)
     revised = sum(bool(record["future_revised"]) for record in records)
-    stable = episodes - revised
     selected_counts = Counter(int(record["selected_index"]) for record in records)
     lineage_counts = Counter(str(record["lineage_id"]) for record in records)
-
-    edit_similarities = [float(record["edit_similarity"]) for record in records]
-    lexical_jaccards = [float(record["lexical_jaccard"]) for record in records]
-    positions = [float(record["sentence_position"]) for record in records]
-
-    before_empty = sum(not str(record["context_before"]).strip() for record in records)
-    after_empty = sum(not str(record["context_after"]).strip() for record in records)
-    both_present = sum(
+    both_context = sum(
         bool(str(record["context_before"]).strip())
         and bool(str(record["context_after"]).strip())
         for record in records
     )
     boundary_artifacts = sum(_has_boundary_artifact(record) for record in records)
     boilerplate = sum(_has_boilerplate(record) for record in records)
-
-    pair_summary = _pair_summary(records)
-    version_summary = _version_summary(records)
-    lineage_summary = _lineage_summary(lineage_counts, episodes=episodes)
 
     report: dict[str, Any] = {
         "audit_schema_version": CONTEXT_AUDIT_SCHEMA_VERSION,
@@ -113,7 +100,7 @@ def build_context_viability_report(
         },
         "target_balance": {
             "future_revised": revised,
-            "future_stable": stable,
+            "future_stable": episodes - revised,
             "future_revised_rate": revised / episodes,
             "future_revised_wilson_95": _wilson_interval(revised, episodes),
         },
@@ -123,22 +110,32 @@ def build_context_viability_report(
             "selected_b_rate": selected_counts[1] / episodes,
             "selected_b_wilson_95": _wilson_interval(selected_counts[1], episodes),
         },
-        "lineages": lineage_summary,
+        "lineages": _lineage_summary(lineage_counts, episodes=episodes),
         "context": {
-            "context_before_empty": before_empty,
-            "context_after_empty": after_empty,
-            "both_context_sides_present": both_present,
-            "both_context_sides_present_rate": both_present / episodes,
+            "context_before_empty": sum(
+                not str(record["context_before"]).strip() for record in records
+            ),
+            "context_after_empty": sum(
+                not str(record["context_after"]).strip() for record in records
+            ),
+            "both_context_sides_present": both_context,
+            "both_context_sides_present_rate": both_context / episodes,
             "source_boundary_artifacts": boundary_artifacts,
             "source_boundary_artifact_rate": boundary_artifacts / episodes,
             "boilerplate_or_credit_records": boilerplate,
             "boilerplate_or_credit_rate": boilerplate / episodes,
         },
-        "pair_reuse": pair_summary,
+        "pair_reuse": _pair_summary(records),
         "feature_distributions": {
-            "edit_similarity": _distribution(edit_similarities),
-            "lexical_jaccard": _distribution(lexical_jaccards),
-            "sentence_position": _distribution(positions),
+            "edit_similarity": _distribution(
+                [float(record["edit_similarity"]) for record in records]
+            ),
+            "lexical_jaccard": _distribution(
+                [float(record["lexical_jaccard"]) for record in records]
+            ),
+            "sentence_position": _distribution(
+                [float(record["sentence_position"]) for record in records]
+            ),
             "edit_similarity_bands": _band_summary(
                 records,
                 field="edit_similarity",
@@ -149,7 +146,7 @@ def build_context_viability_report(
                 field="sentence_position",
                 boundaries=(0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.000000001),
             ),
-            "v1_version_bands": version_summary,
+            "v1_version_bands": _version_summary(records),
         },
     }
     report["gates"] = _build_gates(report)
@@ -166,8 +163,6 @@ def render_context_viability_markdown(report: Mapping[str, Any]) -> str:
     lineages = report["lineages"]
     context = report["context"]
     pairs = report["pair_reuse"]
-    gates = report["gates"]
-
     lines = [
         "# Context Viability Audit",
         "",
@@ -196,20 +191,20 @@ def render_context_viability_markdown(report: Mapping[str, Any]) -> str:
         "",
         "| Measure | Count | Rate |",
         "|---|---:|---:|",
-        (
-            "| Both context sides present | "
-            f"{context['both_context_sides_present']:,} | "
-            f"{context['both_context_sides_present_rate']:.4f} |"
+        _count_rate_row(
+            "Both context sides present",
+            context["both_context_sides_present"],
+            context["both_context_sides_present_rate"],
         ),
-        (
-            "| Source-boundary artifacts | "
-            f"{context['source_boundary_artifacts']:,} | "
-            f"{context['source_boundary_artifact_rate']:.4f} |"
+        _count_rate_row(
+            "Source-boundary artifacts",
+            context["source_boundary_artifacts"],
+            context["source_boundary_artifact_rate"],
         ),
-        (
-            "| Boilerplate or credit records | "
-            f"{context['boilerplate_or_credit_records']:,} | "
-            f"{context['boilerplate_or_credit_rate']:.4f} |"
+        _count_rate_row(
+            "Boilerplate or credit records",
+            context["boilerplate_or_credit_records"],
+            context["boilerplate_or_credit_rate"],
         ),
         "",
         "## Exact pair reuse",
@@ -228,25 +223,22 @@ def render_context_viability_markdown(report: Mapping[str, Any]) -> str:
         "|---|---|",
     ]
     lines.extend(
-        f"| {name.replace('_', ' ')} | {'PASS' if value else 'FAIL'} |"
-        for name, value in gates.items()
+        f"| {name.replace('_', ' ')} | {'PASS' if passed else 'FAIL'} |"
+        for name, passed in report["gates"].items()
     )
-
-    warnings = report.get("warnings", [])
     lines.extend(["", "## Warnings", ""])
-    if warnings:
-        lines.extend(f"- {warning}" for warning in warnings)
-    else:
+    warnings = report.get("warnings", [])
+    lines.extend(f"- {warning}" for warning in warnings)
+    if not warnings:
         lines.append("- None.")
-
     lines.extend(
         [
             "",
             "## Experimental consequence",
             "",
-            "All train, validation, test and bootstrap operations must group by `lineage_id`. ",
-            "Version identifiers, sentence position, edit similarity, lexical overlap and artifact ",
-            "flags must be retained as explicit shortcut baselines rather than silently supplied only ",
+            "All train, validation, test and bootstrap operations must group by `lineage_id`.",
+            "Version identifiers, sentence position, edit similarity, lexical overlap and artifact",
+            "flags must be retained as explicit shortcut baselines rather than being supplied only",
             "to learned text systems.",
             "",
         ]
@@ -257,8 +249,9 @@ def render_context_viability_markdown(report: Mapping[str, Any]) -> str:
 def _validate_record(record: Mapping[str, Any], *, line_number: int) -> None:
     missing = sorted(_REQUIRED_FIELDS.difference(record))
     if missing:
-        raise ValueError(f"line {line_number} is missing required fields: {', '.join(missing)}")
-    if record["selected_index"] not in (0, 1):
+        fields = ", ".join(missing)
+        raise ValueError(f"line {line_number} is missing required fields: {fields}")
+    if type(record["selected_index"]) is not int or record["selected_index"] not in (0, 1):
         raise ValueError(f"line {line_number} has invalid selected_index")
     if type(record["future_revised"]) is not bool:
         raise TypeError(f"line {line_number} future_revised must be a bool")
@@ -304,7 +297,7 @@ def _pair_summary(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         for values in repeated
         if len({_selected_text(record) for record in values}) > 1
     ]
-    same_lineage_reversals = sum(
+    same_lineage = sum(
         len({str(record["lineage_id"]) for record in values}) == 1 for values in reversals
     )
     reversal_episodes = sum(len(values) for values in reversals)
@@ -312,8 +305,8 @@ def _pair_summary(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         "unique_pairs": len(groups),
         "repeated_pair_groups": len(repeated),
         "reversal_pair_groups": len(reversals),
-        "same_lineage_reversal_groups": same_lineage_reversals,
-        "cross_lineage_reversal_groups": len(reversals) - same_lineage_reversals,
+        "same_lineage_reversal_groups": same_lineage,
+        "cross_lineage_reversal_groups": len(reversals) - same_lineage,
         "episodes_in_reversal_groups": reversal_episodes,
         "reversal_episode_rate": reversal_episodes / len(records),
     }
@@ -351,20 +344,18 @@ def _distribution(values: Sequence[float]) -> dict[str, Any]:
 
 def _quantiles(values: Sequence[float]) -> dict[str, float]:
     ordered = sorted(float(value) for value in values)
-    return {
-        label: _quantile(ordered, probability)
-        for label, probability in (
-            ("p01", 0.01),
-            ("p05", 0.05),
-            ("p10", 0.10),
-            ("p25", 0.25),
-            ("p50", 0.50),
-            ("p75", 0.75),
-            ("p90", 0.90),
-            ("p95", 0.95),
-            ("p99", 0.99),
-        )
+    probabilities = {
+        "p01": 0.01,
+        "p05": 0.05,
+        "p10": 0.10,
+        "p25": 0.25,
+        "p50": 0.50,
+        "p75": 0.75,
+        "p90": 0.90,
+        "p95": 0.95,
+        "p99": 0.99,
     }
+    return {label: _quantile(ordered, probability) for label, probability in probabilities.items()}
 
 
 def _quantile(ordered: Sequence[float], probability: float) -> float:
@@ -412,9 +403,9 @@ def _version_summary(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any
             label = "11+"
         buckets[label].append(record)
 
-    ordered_labels = ("1", "2", "3", "4", "5", "6-10", "11+", "non_numeric")
+    labels = ("1", "2", "3", "4", "5", "6-10", "11+", "non_numeric")
     result = []
-    for label in ordered_labels:
+    for label in labels:
         values = buckets.get(label, [])
         if not values:
             continue
@@ -505,7 +496,9 @@ def _build_warnings(report: Mapping[str, Any]) -> list[str]:
             "The official source contains residual boundary artifacts; retain a clean-prose flag and "
             "report all-data versus clean-prose results."
         )
-    warnings.append(
-        "A grouped metadata-only probe is still required before text representation training."
-    )
+    warnings.append("Run a grouped metadata-only future probe before text representation training.")
     return warnings
+
+
+def _count_rate_row(label: str, count: object, rate: object) -> str:
+    return f"| {label} | {int(count):,} | {float(rate):.4f} |"
