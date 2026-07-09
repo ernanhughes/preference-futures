@@ -8,11 +8,12 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 TRAINING_CORPUS_SCHEMA_VERSION = 1
 
 PARTITIONS = ("train", "validation", "test")
+CorpusTree: TypeAlias = dict[str, dict[int, dict[str, list[dict[str, Any]]]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,42 +31,42 @@ CORPUS_SPECS = (
         family="preference",
         objective="predict_editor_selected_candidate",
         label_name="selected_candidate_index",
-        description="Authentic V0/V1 preference supervision: predict which candidate was retained.",
+        description="Authentic V0/V1 preference supervision.",
     ),
     CorpusSpec(
         name="language_modeling_control",
         family="control",
         objective="same_text_exposure_without_pair_label",
         label_name=None,
-        description="Unlabelled exposure to the same serialized pair/context text.",
+        description="Unlabelled exposure to the same pair/context text.",
     ),
     CorpusSpec(
         name="pair_exposure_control",
         family="control",
         objective="same_pair_exposure_without_selection_label",
         label_name=None,
-        description="Revision-pair exposure with no candidate-selection target.",
+        description="Revision-pair exposure without a selection target.",
     ),
     CorpusSpec(
         name="temporal_direction_control",
         family="control",
         objective="predict_newer_candidate",
         label_name="newer_candidate_index",
-        description="Predict which candidate is the later revision; in this dataset that is V1.",
+        description="Predict which candidate is the later revision.",
     ),
     CorpusSpec(
         name="random_label_control",
         family="control",
         objective="predict_deterministic_random_candidate",
         label_name="random_candidate_index",
-        description="Preference-shaped optimization with deterministic random labels.",
+        description="Preference-shaped optimization with random labels.",
     ),
     CorpusSpec(
         name="shuffled_preference_control",
         family="control",
         objective="predict_partition_shuffled_preference_label",
         label_name="shuffled_selected_candidate_index",
-        description="Preference-shaped labels shuffled within each fold partition.",
+        description="Preference-shaped labels shuffled within partitions.",
     ),
 )
 
@@ -84,14 +85,8 @@ def build_training_corpora(
     episodes_path: Path | None = None,
     split_manifest_path: Path | None = None,
     seed: int = 17,
-) -> tuple[dict[str, Any], dict[str, dict[int, dict[str, list[dict[str, Any]]]]]]:
-    """Build in-memory corpus records and a manifest.
-
-    Step 2 intentionally does not train a model. It freezes the source-task
-    examples consumed by later representation training so that authentic
-    preference learning and its controls differ by supervision, not by split,
-    row population or input text.
-    """
+) -> tuple[dict[str, Any], CorpusTree]:
+    """Build in-memory corpus records and a manifest."""
 
     if not records:
         raise ValueError("records must not be empty")
@@ -106,7 +101,7 @@ def build_training_corpora(
     assigned = _assign_records(records, assignments=assignments, folds=folds)
     label_maps = _label_maps(assigned, seed=seed)
 
-    corpora: dict[str, dict[int, dict[str, list[dict[str, Any]]]]] = {}
+    corpora: CorpusTree = {}
     corpus_stats: dict[str, Any] = {}
     for spec in CORPUS_SPECS:
         by_fold: dict[int, dict[str, list[dict[str, Any]]]] = {}
@@ -118,15 +113,14 @@ def build_training_corpora(
                 partition_records = [
                     item for item in assigned if item.fold == fold and item.partition == partition
                 ]
+                label_map = label_maps.get(spec.name, {}).get((fold, partition), {})
                 output_records = [
                     _corpus_record(
                         item.record,
                         spec=spec,
                         fold=fold,
                         partition=partition,
-                        label=label_maps.get(spec.name, {}).get((fold, partition), {}).get(
-                            str(item.record["episode_id"])
-                        ),
+                        label=label_map.get(str(item.record["episode_id"])),
                     )
                     for item in partition_records
                 ]
@@ -138,13 +132,7 @@ def build_training_corpora(
             by_fold[fold] = by_partition
             stats_by_fold[f"fold-{fold:02d}"] = stats_by_partition
         corpora[spec.name] = by_fold
-        corpus_stats[spec.name] = {
-            "family": spec.family,
-            "objective": spec.objective,
-            "label_name": spec.label_name,
-            "description": spec.description,
-            "folds": stats_by_fold,
-        }
+        corpus_stats[spec.name] = _corpus_spec_summary(spec, stats_by_fold)
 
     manifest = {
         "training_corpus_schema_version": TRAINING_CORPUS_SCHEMA_VERSION,
@@ -221,15 +209,7 @@ def render_training_corpus_markdown(manifest: Mapping[str, Any]) -> str:
         label = corpus["label_name"] if corpus["label_name"] is not None else "none"
         lines.append(f"| {name} | {corpus['family']} | {label} | {corpus['objective']} |")
 
-    lines.extend(
-        [
-            "",
-            "## Gates",
-            "",
-            "| Gate | Result |",
-            "|---|---|",
-        ]
-    )
+    lines.extend(["", "## Gates", "", "| Gate | Result |", "|---|---|"])
     lines.extend(
         f"| {name.replace('_', ' ')} | {'PASS' if passed else 'FAIL'} |"
         for name, passed in manifest["gates"].items()
@@ -267,6 +247,16 @@ def render_training_corpus_markdown(manifest: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _corpus_spec_summary(spec: CorpusSpec, stats_by_fold: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "family": spec.family,
+        "objective": spec.objective,
+        "label_name": spec.label_name,
+        "description": spec.description,
+        "folds": stats_by_fold,
+    }
+
+
 def _validate_sources(
     split_manifest: Mapping[str, Any],
     *,
@@ -275,11 +265,8 @@ def _validate_sources(
 ) -> dict[str, Any]:
     checks: dict[str, Any] = {}
     if episodes_path is not None:
-        expected = (
-            split_manifest.get("sources", {})
-            .get("episodes", {})
-            .get("sha256")
-        )
+        sources = split_manifest.get("sources", {})
+        expected = sources.get("episodes", {}).get("sha256") if isinstance(sources, Mapping) else None
         observed = _sha256(episodes_path)
         checks["episodes_sha256_matches_split_manifest"] = observed == expected
         if expected is not None and observed != expected:
@@ -323,15 +310,17 @@ def _assign_records(
             lineage_id = str(record["lineage_id"])
             if lineage_id not in assignments:
                 raise ValueError(f"episode lineage {lineage_id!r} is absent from split manifest")
-            bucket = assignments[lineage_id]
-            if bucket == fold:
-                partition = "test"
-            elif bucket == validation_bucket:
-                partition = "validation"
-            else:
-                partition = "train"
+            partition = _partition_for_bucket(assignments[lineage_id], fold, validation_bucket)
             assigned.append(AssignedEpisode(record=record, fold=fold, partition=partition))
     return assigned
+
+
+def _partition_for_bucket(bucket: int, test_bucket: int, validation_bucket: int) -> str:
+    if bucket == test_bucket:
+        return "test"
+    if bucket == validation_bucket:
+        return "validation"
+    return "train"
 
 
 def _label_maps(
@@ -356,16 +345,7 @@ def _label_maps(
     for key, items in grouped.items():
         source = sorted(items, key=lambda item: str(item.record["episode_id"]))
         labels = [int(item.record["selected_index"]) for item in source]
-        target = sorted(
-            items,
-            key=lambda item: _stable_hex(
-                seed,
-                "shuffled_preference_control",
-                str(key[0]),
-                key[1],
-                str(item.record["episode_id"]),
-            ),
-        )
+        target = sorted(items, key=lambda item: _shuffle_key(seed, key, item))
         if len(labels) > 1:
             labels = labels[1:] + labels[:1]
         for item, label in zip(target, labels, strict=True):
@@ -375,6 +355,16 @@ def _label_maps(
         "random_label_control": dict(random_labels),
         "shuffled_preference_control": dict(shuffled_labels),
     }
+
+
+def _shuffle_key(seed: int, key: tuple[int, str], item: AssignedEpisode) -> str:
+    return _stable_hex(
+        seed,
+        "shuffled_preference_control",
+        str(key[0]),
+        key[1],
+        str(item.record["episode_id"]),
+    )
 
 
 def _corpus_record(
@@ -402,22 +392,22 @@ def _corpus_record(
         "candidate_b": str(record["candidate_b"]),
         "context_before": str(record.get("context_before", "")),
         "context_after": str(record.get("context_after", "")),
-        "metadata": {
-            "selected_sentence_index": record.get("selected_sentence_index"),
-            "sentence_position": record.get("sentence_position"),
-            "edit_similarity": record.get("edit_similarity"),
-            "lexical_jaccard": record.get("lexical_jaccard"),
-            "v0_version_id": record.get("v0_version_id"),
-            "v1_version_id": record.get("v1_version_id"),
-        },
+        "metadata": _metadata(record),
     }
-    if spec.label_name is not None:
-        output["label_name"] = spec.label_name
-        output["label"] = label
-    else:
-        output["label_name"] = None
-        output["label"] = None
+    output["label_name"] = spec.label_name
+    output["label"] = label if spec.label_name is not None else None
     return output
+
+
+def _metadata(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "selected_sentence_index": record.get("selected_sentence_index"),
+        "sentence_position": record.get("sentence_position"),
+        "edit_similarity": record.get("edit_similarity"),
+        "lexical_jaccard": record.get("lexical_jaccard"),
+        "v0_version_id": record.get("v0_version_id"),
+        "v1_version_id": record.get("v1_version_id"),
+    }
 
 
 def _input_text(record: Mapping[str, Any]) -> str:
@@ -441,13 +431,13 @@ def _partition_stats(
 ) -> dict[str, Any]:
     labels = [record.get("label") for record in records if record.get("label") is not None]
     future_revised = sum(bool(record["future_revised"]) for record in source_records)
-    token_count = sum(_token_count(str(record["input_text"])) for record in records)
+    label_rate = sum(int(label) == 1 for label in labels) / len(labels) if labels else None
     return {
         "records": len(records),
         "lineages": len({str(record["lineage_id"]) for record in records}),
-        "input_tokens_whitespace": token_count,
+        "input_tokens_whitespace": sum(_token_count(str(r["input_text"])) for r in records),
         "labelled_records": len(labels),
-        "label_one_rate": sum(int(label) == 1 for label in labels) / len(labels) if labels else None,
+        "label_one_rate": label_rate,
         "future_revised": future_revised,
         "future_revised_rate": future_revised / len(source_records) if source_records else 0.0,
         "source_training_allowed": all(record["source_training_allowed"] for record in records),
@@ -466,20 +456,15 @@ def _global_totals(records: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def _split_identity(split_manifest: Mapping[str, Any]) -> dict[str, Any]:
+    sources = split_manifest.get("sources", {})
+    episode_source = sources.get("episodes", {}) if isinstance(sources, Mapping) else {}
+    numeric_source = sources.get("numeric_flags", {}) if isinstance(sources, Mapping) else {}
     return {
         "seed": split_manifest.get("seed"),
         "outer_folds": split_manifest.get("outer_folds"),
         "grouping_key": split_manifest.get("grouping_key"),
-        "episodes_sha256": (
-            split_manifest.get("sources", {})
-            .get("episodes", {})
-            .get("sha256")
-        ),
-        "numeric_flags_sha256": (
-            split_manifest.get("sources", {})
-            .get("numeric_flags", {})
-            .get("sha256")
-        ),
+        "episodes_sha256": episode_source.get("sha256"),
+        "numeric_flags_sha256": numeric_source.get("sha256"),
     }
 
 
@@ -488,7 +473,6 @@ def _build_gates(manifest: Mapping[str, Any]) -> dict[str, bool]:
     folds = range(int(manifest["outer_folds"]))
     equal_records = True
     equal_tokens = True
-    no_future_labels = True
     test_not_training = True
     for fold in folds:
         for partition in PARTITIONS:
@@ -497,33 +481,37 @@ def _build_gates(manifest: Mapping[str, Any]) -> dict[str, bool]:
                 for name in corpus_names
             ]
             equal_records = equal_records and len({item["records"] for item in stats}) == 1
-            equal_tokens = equal_tokens and len(
-                {item["input_tokens_whitespace"] for item in stats}
-            ) == 1
+            equal_tokens = equal_tokens and _all_token_counts_equal(stats)
             if partition == "test":
-                test_not_training = test_not_training and not any(
-                    item["source_training_allowed"] for item in stats
-                )
+                test_not_training = test_not_training and _all_not_trainable(stats)
     return {
         "episodes_hash_matches_frozen_split": bool(
             manifest["source_checks"]["episodes_sha256_matches_split_manifest"]
         ),
         "all_corpora_share_partition_record_counts": equal_records,
         "all_corpora_share_partition_input_token_counts": equal_tokens,
-        "future_labels_redacted_from_corpus_records": no_future_labels,
+        "future_labels_redacted_from_corpus_records": True,
         "test_partitions_marked_not_for_source_training": test_not_training,
         "all_expected_corpora_present": set(corpus_names)
         == {spec.name for spec in CORPUS_SPECS},
     }
 
 
+def _all_token_counts_equal(stats: Sequence[Mapping[str, Any]]) -> bool:
+    return len({item["input_tokens_whitespace"] for item in stats}) == 1
+
+
+def _all_not_trainable(stats: Sequence[Mapping[str, Any]]) -> bool:
+    return not any(item["source_training_allowed"] for item in stats)
+
+
 def _build_warnings(manifest: Mapping[str, Any]) -> list[str]:
     warnings = [
-        "Do not train source-task encoders on test partitions; they are emitted only for audit and optional source-task reporting.",
+        "Do not train source-task encoders on test partitions.",
         "Future labels are used in the manifest summary only, not in corpus JSONL records.",
     ]
     if not all(manifest["gates"].values()):
-        warnings.append("At least one Step 2 corpus gate failed; do not train from these corpora.")
+        warnings.append("At least one Step 2 corpus gate failed; do not train these corpora.")
     return warnings
 
 
