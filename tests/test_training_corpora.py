@@ -91,7 +91,7 @@ def test_builds_compute_matched_corpora_with_same_partition_counts(tmp_path: Pat
             assert len(token_counts) == 1
 
 
-def test_corpus_records_redact_future_labels_and_mark_test_not_trainable(tmp_path: Path) -> None:
+def test_corpus_records_redact_future_labels(tmp_path: Path) -> None:
     records, episodes_path, manifest_path = _fixture(tmp_path)
     split_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -116,7 +116,7 @@ def test_corpus_records_redact_future_labels_and_mark_test_not_trainable(tmp_pat
     assert unlabelled["label"] is None
 
 
-def test_shuffled_labels_preserve_partition_prevalence_but_are_deterministic(tmp_path: Path) -> None:
+def test_shuffled_labels_are_deterministic(tmp_path: Path) -> None:
     records, episodes_path, manifest_path = _fixture(tmp_path)
     split_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
@@ -149,9 +149,10 @@ def test_shuffled_labels_preserve_partition_prevalence_but_are_deterministic(tmp
             assert shuffled_labels == authentic_labels
 
 
-def test_rejects_episode_file_that_does_not_match_split_manifest_hash(tmp_path: Path) -> None:
+def test_rejects_changed_episode_file(tmp_path: Path) -> None:
     records, episodes_path, manifest_path = _fixture(tmp_path)
-    episodes_path.write_text(episodes_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    original = episodes_path.read_text(encoding="utf-8")
+    episodes_path.write_text(original + "\n", encoding="utf-8")
     split_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     with pytest.raises(ValueError, match="episodes SHA-256"):
