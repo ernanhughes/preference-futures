@@ -1,0 +1,67 @@
+{
+  "result_schema_version": 1,
+  "experiment_step": "01-grouped-split-manifests",
+  "status": "verified",
+  "seed": 17,
+  "outer_folds": 10,
+  "dataset": {
+    "episodes": 12056,
+    "article_lineages": 3386,
+    "future_revised": 3104,
+    "future_stable": 8952,
+    "future_revised_rate": 0.25746516257465163,
+    "selected_b_rate": 0.506635700066357,
+    "number_changed": 1228,
+    "number_changed_rate": 0.10185799601857996,
+    "number_dominant": 424,
+    "number_dominant_rate": 0.035169210351692105,
+    "casualty_count": 100,
+    "casualty_count_rate": 0.00829462508294625
+  },
+  "maximum_outer_test_fold_deviations": {
+    "episode_share_from_expected": 0.00013271400132713884,
+    "lineage_share_from_expected": 0.00017720023626698056,
+    "future_revised_rate_from_global": 0.0008404852658799311,
+    "number_changed_rate_from_global": 0.0006971336636877601
+  },
+  "test_folds": [
+    {"fold": 0, "lineages": 339, "episodes": 1204, "future_revised_rate": 0.25830564784053156, "number_changed_rate": 0.10215946843853821},
+    {"fold": 1, "lineages": 338, "episodes": 1207, "future_revised_rate": 0.25683512841756423, "number_changed_rate": 0.10190555095277548},
+    {"fold": 2, "lineages": 338, "episodes": 1206, "future_revised_rate": 0.2570480928689884, "number_changed_rate": 0.1011608623548922},
+    {"fold": 3, "lineages": 339, "episodes": 1205, "future_revised_rate": 0.25809128630705397, "number_changed_rate": 0.1020746887966805},
+    {"fold": 4, "lineages": 339, "episodes": 1205, "future_revised_rate": 0.2572614107883817, "number_changed_rate": 0.1020746887966805},
+    {"fold": 5, "lineages": 339, "episodes": 1206, "future_revised_rate": 0.2570480928689884, "number_changed_rate": 0.10199004975124377},
+    {"fold": 6, "lineages": 339, "episodes": 1205, "future_revised_rate": 0.2572614107883817, "number_changed_rate": 0.1020746887966805},
+    {"fold": 7, "lineages": 338, "episodes": 1206, "future_revised_rate": 0.25787728026533996, "number_changed_rate": 0.10199004975124377},
+    {"fold": 8, "lineages": 339, "episodes": 1206, "future_revised_rate": 0.25787728026533996, "number_changed_rate": 0.1011608623548922},
+    {"fold": 9, "lineages": 338, "episodes": 1206, "future_revised_rate": 0.2570480928689884, "number_changed_rate": 0.10199004975124377}
+  ],
+  "builder_gates": {
+    "all_lineages_tested_exactly_once": true,
+    "all_lineages_validated_exactly_once": true,
+    "test_episode_share_within_2_points": true,
+    "test_lineage_share_within_2_points": true,
+    "test_future_rate_within_3_points": true,
+    "test_numeric_change_rate_within_3_points": true
+  },
+  "independent_verification": {
+    "assignment_count_matches_total_lineages": true,
+    "all_assignment_fold_ids_valid": true,
+    "assignment_map_matches_test_fold_lineage_counts": true,
+    "test_partition_counts_sum_to_dataset_totals": true,
+    "validation_partition_counts_sum_to_dataset_totals": true,
+    "validation_partition_is_next_outer_test_bucket": true,
+    "train_partition_is_exact_complement": true
+  },
+  "source_artifacts": {
+    "episodes": {
+      "bytes": 13149409,
+      "sha256": "df4e40330ad6d3f6d4977e1630e2e54e3cfc06b01277d1aa98b7994e8c63e5ab"
+    },
+    "numeric_flags": {
+      "bytes": 5865383,
+      "sha256": "abf517a03760da77bf60029d3385887ec6d3b73bd7db7e3d74f238ead07d75c1"
+    }
+  },
+  "conclusion": "The deterministic 80/10/10 outer-fold policy passed all balance gates and independent coverage checks. These assignments are frozen for downstream representation experiments."
+}

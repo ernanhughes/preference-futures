@@ -33,30 +33,35 @@ Run:
   -Seed 17
 ```
 
-The command writes one manifest and ten fold files. The files contain lineage assignments and balance statistics, not duplicated article text.
+The command writes one manifest and ten fold files, then independently verifies the persisted assignment map and partition arithmetic. The files contain lineage assignments and balance statistics, not duplicated article text.
 
 The split is accepted only if:
 
 - train, validation and test lineages are disjoint in every fold;
 - every lineage is tested exactly once;
 - every lineage is used for validation exactly once;
+- the assignment map agrees with the per-fold summaries;
 - test-fold episode shares remain close to 10%;
 - future-revision rates remain close to the full dataset rate;
 - numerical-change prevalence remains balanced across test folds.
 
 ### Result
 
-<!-- Replace this block with the generated values from artifacts/transfer/splits/split-summary.md. -->
-
 ```text
-Status:                        PENDING LOCAL RUN
-Episodes:                      PENDING
-Article lineages:              PENDING
-Outer folds:                   10
-Maximum target-rate deviation: PENDING
-Maximum numeric-rate deviation:PENDING
-Leakage and coverage gates:    PENDING
+Status:                         PASS
+Episodes:                       12,056
+Article lineages:               3,386
+Outer folds:                    10
+Maximum episode-share deviation:0.0133 percentage points
+Maximum lineage-share deviation:0.0177 percentage points
+Maximum target-rate deviation:  0.0840 percentage points
+Maximum numeric-rate deviation: 0.0697 percentage points
+Leakage and coverage checks:    PASS
 ```
+
+Each outer test fold contains between **1,204 and 1,207 episodes** from either **338 or 339 article lineages**. The complete dataset has a 25.7465% future-revision rate; no test fold differs from it by more than 0.084 percentage points. Numerical-change prevalence is 10.1858% overall; no test fold differs by more than 0.070 percentage points.
+
+The persisted assignment map contains exactly 3,386 unique lineages, every fold ID is valid, each validation partition is the next outer test bucket, and every training partition is the exact complement of its test and validation partitions.
 
 A passing result proves only this:
 
@@ -64,4 +69,4 @@ A passing result proves only this:
 
 It does not prove that preference learning transfers to future prediction.
 
-It makes that claim testable.
+It makes that claim testable—and freezes the boundary within which every later result must be evaluated.

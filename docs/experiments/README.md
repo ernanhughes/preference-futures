@@ -13,8 +13,8 @@ This directory extends the blog into an executable sequence. Each step contains:
 
 | Step | Document | Status |
 |---:|---|---|
-| 1 | [Freeze article-grouped split manifests](01-grouped-split-manifests.md) | Implemented; awaiting real-data run |
-| 2 | Build compute-matched training corpora | Planned |
+| 1 | [Freeze article-grouped split manifests](01-grouped-split-manifests.md) | **Verified on 12,056 episodes / 3,386 lineages** |
+| 2 | Build compute-matched training corpora | Next |
 | 3 | Train authentic and control representations | Planned |
 | 4 | Verify source-task learning and freeze encoders | Planned |
 | 5 | Extract frozen representations | Planned |
@@ -23,6 +23,17 @@ This directory extends the blog into an executable sequence. Each step contains:
 | 8 | Run numerical, clean-prose and reversal ablations | Planned |
 | 9 | Run future-label sample-efficiency curves | Planned |
 | 10 | Produce the confirmatory transfer decision report | Planned |
+
+## Frozen Step 1 identity
+
+```text
+seed: 17
+outer folds: 10
+episodes SHA-256: df4e40330ad6d3f6d4977e1630e2e54e3cfc06b01277d1aa98b7994e8c63e5ab
+numeric flags SHA-256: abf517a03760da77bf60029d3385887ec6d3b73bd7db7e3d74f238ead07d75c1
+```
+
+The compact result record is [`docs/results/step-01-grouped-splits.json`](../results/step-01-grouped-splits.json).
 
 ## Rule
 

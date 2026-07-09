@@ -109,9 +109,9 @@ The context audit freezes descriptive checks for target balance, candidate orien
 
 The numeric audit identifies changed values, number-only edits, number-dominant edits, date/update changes, money and percentages, sports values, casualty-count changes and repeated numeric trajectories. These flags become mandatory controls in the later transfer experiment.
 
-## Step 1: freeze grouped evaluation splits
+## Step 1: grouped evaluation boundary verified
 
-Before model training, build deterministic article-lineage grouped folds:
+Build and independently verify deterministic article-lineage grouped folds:
 
 ```powershell
 .\scripts\40-build-grouped-splits.ps1 `
@@ -122,7 +122,16 @@ Before model training, build deterministic article-lineage grouped folds:
   -Seed 17
 ```
 
-The policy uses one outer bucket for test, the next bucket for validation and the remaining eight buckets for training. Every lineage is test exactly once and validation exactly once. See [Step 1](docs/experiments/01-grouped-split-manifests.md) for the pass criteria and the results section completed after the real-data run.
+The seed-17 result assigns all 12,056 episodes from 3,386 article lineages into ten 80/10/10 outer-fold experiments. Every lineage is test exactly once and validation exactly once. Test folds contain 1,204–1,207 episodes from 338–339 lineages.
+
+The maximum test-fold deviations are:
+
+```text
+future-revision rate: 0.0840 percentage points
+numeric-change rate:  0.0697 percentage points
+```
+
+The assignments, source hashes and compact result are frozen in [Step 1](docs/experiments/01-grouped-split-manifests.md) and [`docs/results/step-01-grouped-splits.json`](docs/results/step-01-grouped-splits.json).
 
 ## Repository sequence
 
@@ -131,10 +140,10 @@ The policy uses one outer bucket for test, the next bucket for validation and th
 2. NewsEdits source adapter         done
 3. Official split_sentences input   done
 4. PowerShell run scripts           done
-5. Context viability audit          implemented
-6. Numeric shortcut audit           implemented
+5. Context viability audit          verified
+6. Numeric shortcut audit           verified
 7. Executable blog and claim ledger implemented
-8. Grouped split manifests          implemented; awaiting real-data run
+8. Grouped split manifests          verified and frozen
 9. Compute-matched training corpora next
 10. Preference and control training
 11. Frozen representation transfer

@@ -22,7 +22,7 @@ This document separates verified repository facts from active hypotheses. Every 
 | C6 | Repeated casualty-count updates are too rare to dominate the extracted dataset. | Refined | `scripts/15-numeric-shortcut-audit.ps1` | `numeric-shortcut.json` | Casualty-count updates exceed 2% of episodes or their exclusion materially removes the dataset-level target signal. |
 | C7 | Numerical revisions more broadly form a shortcut class because changed numerical claims are unusually likely to change again. | Verified | `scripts/15-numeric-shortcut-audit.ps1` | `numeric-shortcut.json` | `number_changed` has no meaningful risk increase over its complement, or number masking/exclusion leaves no measurable difference. |
 | C8 | Preference-derived datasets encode latent state volatility as well as immediate choice. | Supported interpretation | `scripts/15-numeric-shortcut-audit.ps1` plus grouped metadata baselines | Numeric audit and future baseline reports | The numeric and temporal metadata baselines fail to predict future revision above the constant prior. |
-| C9 | The representation experiment can use deterministic 80/10/10 article-lineage grouped partitions without direct lineage leakage or severe target and numeric-shortcut imbalance. | Implemented | `scripts/40-build-grouped-splits.ps1` | `manifest.json`, `split-summary.json`, `split-summary.md`, `fold-00.json` through `fold-09.json` | Any lineage crosses partitions inside a fold, any lineage is not tested exactly once, or target/numeric rates violate the frozen gates. |
+| C9 | The representation experiment can use deterministic 80/10/10 article-lineage grouped partitions without direct lineage leakage or severe target and numeric-shortcut imbalance. | Verified | `scripts/40-build-grouped-splits.ps1`, `scripts/41-verify-grouped-splits.ps1` | `manifest.json`, `split-summary.json`, `split-verification.json`, `fold-00.json` through `fold-09.json`, `docs/results/step-01-grouped-splits.json` | Any lineage crosses partitions inside a fold, any lineage is not tested exactly once, or target/numeric rates violate the frozen gates. |
 | H1 | Authentic preference training creates a frozen representation that predicts later selected-branch outcomes better than the same generic encoder. | Pending | Future representation-transfer script | Future transfer report | Authentic preference representation does not beat the generic encoder on grouped held-out lineages. |
 | H2 | Any transfer advantage is specific to authentic preference rather than extra training, domain adaptation, pair exposure, or temporal discrimination. | Pending | Future compute-matched control suite | Future control comparison report | MLM, pair exposure, temporal direction, random labels, or shuffled preference match or beat authentic preference. |
 | H3 | Preference transfer survives numerical masking, number-dominant exclusion, clean-prose filtering, and exact-pair-reversal exclusion. | Pending | Future ablation suite using `numeric-flags.jsonl` and context flags | Future ablation report | The advantage disappears under one or more shortcut controls. |
@@ -42,6 +42,31 @@ The deterministic NYT viability run with seed `17`, `5,000` sampled articles, an
 ```
 
 These values establish dataset viability. They do **not** establish preference-representation transfer.
+
+## Verified grouped evaluation boundary
+
+The ten-fold, seed-17 article-grouped manifest passed every builder gate and independent coverage check:
+
+```text
+12,056 episodes assigned
+3,386 unique article lineages assigned
+1,204–1,207 test episodes per outer fold
+338–339 test lineages per outer fold
+maximum future-rate deviation: 0.0840 percentage points
+maximum numeric-rate deviation: 0.0697 percentage points
+```
+
+The frozen source identities are:
+
+```text
+episodes SHA-256:
+df4e40330ad6d3f6d4977e1630e2e54e3cfc06b01277d1aa98b7994e8c63e5ab
+
+numeric flags SHA-256:
+abf517a03760da77bf60029d3385887ec6d3b73bd7db7e3d74f238ead07d75c1
+```
+
+All downstream training and evaluation must consume those assignments and source artifacts.
 
 ## One-command reproduction
 
@@ -64,7 +89,7 @@ artifacts/newsedits/blog-evidence/numeric-flags.jsonl
 
 ## Representation experiment steps
 
-The executable extension is documented under [`docs/experiments/`](experiments/README.md). Step 1 freezes the grouped split manifests before any encoder is trained.
+The executable extension is documented under [`docs/experiments/`](experiments/README.md). Step 1 is verified; Step 2 builds the compute-matched training corpora.
 
 ## Publication rule
 
