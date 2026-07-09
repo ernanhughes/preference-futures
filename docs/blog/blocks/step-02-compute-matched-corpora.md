@@ -54,13 +54,13 @@ retained candidate index
 newer candidate index
 ```
 
-Training “temporal direction” on the exact authentic pairs would therefore reproduce the authentic labels and then pretend they represented a competing explanation.
+Training temporal direction on the exact authentic pairs would therefore reproduce the authentic labels and then pretend they represented a competing explanation.
 
 The repository refuses that shortcut.
 
-Instead, the temporal-direction encoder is trained on one-to-one replacements from other NewsEdits article lineages that never appear in the preference-future evaluation set. It learns generic revision newness in the same publication domain without seeing any evaluation article trajectory.
+Instead, the temporal-direction encoder is trained on one-to-one replacements from other NewsEdits article lineages that never appear in the preference-future evaluation set. It learns generic revision newness in the same publication domain without seeing an evaluation article trajectory.
 
-That correction narrows what the eventual result can claim. NewsEdits alone cannot fully separate “preference learning” from “learning the semantics of an accepted chronological revision,” because the observed choice and the later sentence are the same event. A positive result must first beat the independent temporal representation and should still be described carefully until it generalises to datasets where preference is not synonymous with chronological replacement.
+That correction narrows what the eventual result can claim. NewsEdits alone cannot fully separate preference learning from learning the semantics of an accepted chronological revision. A positive result must beat the independent temporal representation and should still be described carefully until it generalises to datasets where preference is not synonymous with chronological replacement.
 
 ### The six trained regimes
 
@@ -76,37 +76,80 @@ That correction narrows what the eventual result can claim. NewsEdits alone cann
 
 **Authentic preference** predicts which candidate the editor retained.
 
-The source-task artifacts are accepted only when:
+The source-task artifacts were accepted only if:
 
 ```text
-all six corpora have identical record counts
-no test lineage enters preference-derived source training
-future and V2 fields are absent
-random and pair-exposure labels are balanced
-negative and shuffled donors cross article lineages
-temporal articles are disjoint from evaluation articles
-all 120 expected corpus files survive persisted verification
+all six corpora had identical record counts
+no test lineage entered preference-derived source training
+future and V2 fields were absent
+random and pair-exposure labels were balanced
+negative and shuffled donors crossed article lineages
+temporal articles were disjoint from evaluation articles
+all 120 expected corpus files survived persisted verification
 ```
 
-### Result
+### The real-data result
+
+The seed-17 run used the same 12,056 preference episodes and 3,386 evaluation lineages frozen in Step One.
+
+For the independent temporal control, it extracted:
 
 ```text
-Status:                             PENDING LOCAL RUN
-Independent temporal pairs:         PENDING
-Independent temporal lineages:      PENDING
-Corpus JSONL files:                 120 expected
-Records per train corpus by fold:   PENDING
-Records per validation corpus:      PENDING
-Builder gates:                      PENDING
-Persisted verification gates:       PENDING
+24,112 temporal-direction pairs
+5,135 external article lineages
+0 evaluation-lineage overlap
 ```
 
-A passing Step Two result proves only this:
+The extractor selected 20,000 external articles and reached the target after reading 6,849 of them. It examined 44,840 one-to-one replacement candidates before accepting the required pool.
+
+All ten folds were then materialised.
+
+```text
+train records per corpus:      9,643–9,646
+validation records per corpus: 1,204–1,207
+expected corpus files:         120
+observed corpus files:         120
+persisted records verified:    651,024
+builder gates passed:          10 of 10
+verification checks passed:    10 of 10
+verification errors:           0
+```
+
+The verifier reopened every corpus file. Every line count matched the manifest. Every record identified the correct fold, partition and corpus. Every source ID was unique within its file. All frozen source hashes still matched. No future label or V2 field appeared anywhere.
+
+That closes the data-contract question.
+
+### Equal records are not yet equal compute
+
+The authentic, language-adaptation, random-label and shuffled-preference regimes use the same underlying episode text, so their exposure totals are identical. Pair exposure differs negligibly because its negative examples substitute candidate B from another lineage.
+
+The external temporal corpus is longer. Across the ten training folds, its whitespace-token exposure was between 6.51% and 7.47% higher than authentic preference, with a mean difference of 7.05%. Validation showed a similar mean difference of 7.09%, although individual folds ranged from 3.70% to 10.76%.
+
+That does not invalidate Step Two. It tells Step Three exactly what it must control.
+
+Every regime must use:
+
+```text
+one starting checkpoint
+one tokenizer
+one frozen maximum sequence length
+one padding policy
+one batch size
+one optimiser and schedule
+one update count
+one fixed checkpoint rule
+```
+
+Otherwise the temporal arm could receive more effective compute merely because its source sentences are longer.
+
+### What Step Two established
 
 > The authentic revision-choice objective and five trained alternatives were frozen before model training with equal source-record budgets, no direct future-label leakage and an independent temporal-control pool.
 
-It does not yet prove equal compute. The next step must train every regime from the same checkpoint with the same tokenizer, fixed sequence length, padding policy, optimiser, batch size, learning-rate schedule and number of updates.
+That is now verified rather than planned.
 
-It also does not prove transfer.
+It does not prove equal optimisation compute. The next step must enforce it.
+
+It does not prove transfer.
 
 It makes the transfer comparison hard enough to be worth believing.
