@@ -1,0 +1,16 @@
+name: debug-tests
+
+on:
+  pull_request:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          show-progress: false
+      - name: Install quietly
+        run: python3 -m pip install -q -e ".[dev]"
+      - name: Run first failing test
+        run: pytest -x -q
