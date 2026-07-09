@@ -17,7 +17,8 @@ Run these scripts from the repository root in PowerShell. Every script resolves 
 | `15-numeric-shortcut-audit.ps1` | Measure numerical-update prevalence, future risk and repeated numeric trajectories. |
 | `20-current-smoke-pipeline.ps1` | Run checks, inspect the database, extract a smoke sample, and verify it. |
 | `30-reproduce-blog-evidence.ps1` | Run the complete extraction, context and numeric evidence chain used by the blog. |
-| `40-build-grouped-splits.ps1` | Freeze deterministic article-lineage grouped train, validation and test manifests. |
+| `40-build-grouped-splits.ps1` | Freeze deterministic article-lineage grouped train, validation and test manifests, then verify them. |
+| `41-verify-grouped-splits.ps1` | Independently verify an existing persisted grouped split manifest. |
 | `_common.ps1` | Shared internal helpers; do not run directly. |
 
 ## First-time setup
@@ -173,19 +174,28 @@ Run this only after generating the numeric flags used for balancing:
   -Seed 17
 ```
 
-This writes:
+The builder now invokes the independent verifier automatically. It writes:
 
 ```text
 artifacts/transfer/splits/manifest.json
 artifacts/transfer/splits/split-summary.json
 artifacts/transfer/splits/split-summary.md
+artifacts/transfer/splits/split-verification.json
+artifacts/transfer/splits/split-verification.md
 artifacts/transfer/splits/fold-00.json
 ...
 artifacts/transfer/splits/fold-09.json
 ```
 
-For outer fold `i`, test is bucket `i`, validation is bucket `(i + 1) mod 10`, and the remaining eight buckets train. Every article lineage is test exactly once and validation exactly once. The manifest records input hashes, partition counts, target rates, numeric-shortcut rates and leakage gates.
+Verify an existing manifest without rebuilding assignments:
 
-The detailed experimental step is [`docs/experiments/01-grouped-split-manifests.md`](../docs/experiments/01-grouped-split-manifests.md). Its publication block is [`docs/blog/blocks/step-01-grouped-splits.md`](../docs/blog/blocks/step-01-grouped-splits.md).
+```powershell
+.\scripts\41-verify-grouped-splits.ps1 `
+  -ManifestPath artifacts\transfer\splits\manifest.json
+```
+
+For outer fold `i`, test is bucket `i`, validation is bucket `(i + 1) mod 10`, and the remaining eight buckets train. Every article lineage is test exactly once and validation exactly once. The independent verifier checks the complete assignment-map size, valid fold IDs, agreement with test summaries, validation rotation, training complements, dataset-total arithmetic and source SHA-256 values.
+
+The detailed verified result is [`docs/experiments/01-grouped-split-manifests.md`](../docs/experiments/01-grouped-split-manifests.md). Its compact machine-readable record is [`docs/results/step-01-grouped-splits.json`](../docs/results/step-01-grouped-splits.json), and its publication block is [`docs/blog/blocks/step-01-grouped-splits.md`](../docs/blog/blocks/step-01-grouped-splits.md).
 
 All orchestration scripts stop immediately when a child command or script fails. New numbered scripts will be added as training corpora, baselines, and transfer experiments become executable. Scripts should wrap importable package commands rather than contain research logic themselves.
