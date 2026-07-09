@@ -20,6 +20,7 @@ dev = [
 
 [project.scripts]
 preference-futures-newsedits = "preference_futures.newsedits.cli:main"
+preference-futures-audit = "preference_futures.audit.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
