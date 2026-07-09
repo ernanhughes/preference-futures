@@ -248,31 +248,40 @@ def _donor_mapping(
 ) -> dict[str, str]:
     if len(records) < 2:
         raise ValueError("at least two records are required for donor controls")
-    ordered = sorted(
-        records,
-        key=lambda row: hash_int(f"{namespace}:{seed}:{row['episode_id']}"),
-    )
-    ids = [str(row["episode_id"]) for row in ordered]
-    lineages = [str(row["lineage_id"]) for row in ordered]
-    candidate_shifts = set(range(1, min(len(ids), 257)))
-    candidate_shifts.update({len(ids) // 2, max(Counter(lineages).values())})
-    candidate_shifts = {value % len(ids) for value in candidate_shifts if value % len(ids)}
-    best_shift = min(
-        candidate_shifts,
-        key=lambda shift: (
-            sum(
-                lineages[index] == lineages[(index + shift) % len(ids)]
-                for index in range(len(ids))
-            ),
-            sum(
-                ids[index] == ids[(index + shift) % len(ids)]
-                for index in range(len(ids))
-            ),
-            hash_int(f"{namespace}:shift:{seed}:{shift}"),
+
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
+    for record in records:
+        grouped.setdefault(str(record["lineage_id"]), []).append(record)
+    largest_group = max(len(group) for group in grouped.values())
+    if largest_group * 2 > len(records):
+        raise ValueError(
+            f"cannot construct cross-lineage donors for {namespace}: one lineage owns "
+            "more than half of the partition"
+        )
+
+    group_order = sorted(
+        grouped,
+        key=lambda lineage: (
+            -len(grouped[lineage]),
+            hash_int(f"{namespace}:group:{seed}:{lineage}"),
         ),
     )
+    ordered: list[Mapping[str, Any]] = []
+    for lineage in group_order:
+        ordered.extend(
+            sorted(
+                grouped[lineage],
+                key=lambda row: hash_int(
+                    f"{namespace}:record:{seed}:{row['episode_id']}"
+                ),
+            )
+        )
+
+    ids = [str(row["episode_id"]) for row in ordered]
+    lineages = [str(row["lineage_id"]) for row in ordered]
+    shift = largest_group
     mapping = {
-        ids[index]: ids[(index + best_shift) % len(ids)] for index in range(len(ids))
+        ids[index]: ids[(index + shift) % len(ids)] for index in range(len(ids))
     }
     lineage_by_id = {
         str(row["episode_id"]): str(row["lineage_id"]) for row in ordered
@@ -281,7 +290,7 @@ def _donor_mapping(
         lineage_by_id[episode_id] == lineage_by_id[donor_id]
         for episode_id, donor_id in mapping.items()
     ):
-        raise ValueError(f"could not construct cross-lineage donors for {namespace}")
+        raise AssertionError(f"cross-lineage donor construction failed for {namespace}")
     return mapping
 
 
