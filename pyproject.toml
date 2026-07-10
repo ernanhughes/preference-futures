@@ -37,6 +37,7 @@ preference-futures-representations = "preference_futures.representations.cli:mai
 preference-futures-probes = "preference_futures.probes.cli:main"
 preference-futures-milestone = "preference_futures.milestone.cli:main"
 preference-futures-diagnostics = "preference_futures.diagnostics.cli:main"
+preference-futures-editorial-mrq = "preference_futures.editorial_mrq.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
