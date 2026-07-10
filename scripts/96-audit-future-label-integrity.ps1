@@ -32,11 +32,12 @@ $arguments = @(
     $MaxArticles.ToString(),
     "--max-examples",
     $MaxExamples.ToString(),
-    "--sources",
-    $Sources,
     "--sample-limit",
     $SampleLimit.ToString()
 )
+if ($Sources) {
+    $arguments += @("--sources", $Sources)
+}
 if ($Table) {
     $arguments += @("--table", $Table)
 }
