@@ -11,11 +11,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from preference_futures.editorial_mrq.aggregate import wilson_interval
-from preference_futures.editorial_mrq.runtime import (
-    _build_mrq_model,
-    partition_row_indices,
-)
+from preference_futures.editorial_mrq.runtime import _build_mrq_model, partition_row_indices
 from preference_futures.probes.common import (
     L2_GRID,
     STANDARDISATION_EPSILON,
@@ -66,11 +62,11 @@ def prepare_future_transfer(
 ) -> dict[str, Any]:
     """Freeze Step 8.4 only after the pooled source-task gate has passed."""
 
-    root = editorial_directory.expanduser().resolve()
+    editorial_root = editorial_directory.expanduser().resolve()
     output = (
         output_directory.expanduser().resolve()
         if output_directory is not None
-        else root / "future-transfer"
+        else editorial_root / "future-transfer"
     )
     if output.exists() and any(output.iterdir()):
         if not force:
@@ -78,33 +74,38 @@ def prepare_future_transfer(
         shutil.rmtree(output)
     output.mkdir(parents=True, exist_ok=True)
 
-    editorial_contract_path = root / "contract.json"
+    editorial_contract_path = editorial_root / "contract.json"
     editorial_contract = load_json(editorial_contract_path)
-    source_aggregate_path = root / "rankers" / "aggregate.json"
+    source_aggregate_path = editorial_root / "rankers" / "aggregate.json"
     source_aggregate = load_json(source_aggregate_path)
     _validate_canonical_report(source_aggregate, source_aggregate_path)
     if source_aggregate.get("overall_source_gate", {}).get("passed") is not True:
         raise ValueError("Step 8.4 is blocked because the pooled source-task gate did not pass")
 
-    embedding_report_path = root / "embeddings" / "report.json"
+    embedding_report_path = editorial_root / "embeddings" / "report.json"
     embedding_report = load_json(embedding_report_path)
     tensor_path = Path(str(embedding_report["artifacts"]["embeddings_path"]))
     rows_path = Path(str(embedding_report["artifacts"]["rows_path"]))
-    if sha256_file(tensor_path) != str(embedding_report["artifacts"]["embeddings_sha256"]):
-        raise ValueError("Step 8 frozen embeddings changed")
-    if sha256_file(rows_path) != str(embedding_report["artifacts"]["rows_sha256"]):
-        raise ValueError("Step 8 embedding rows changed")
+    _require_hash(
+        tensor_path,
+        str(embedding_report["artifacts"]["embeddings_sha256"]),
+        "Step 8 frozen embeddings",
+    )
+    _require_hash(
+        rows_path,
+        str(embedding_report["artifacts"]["rows_sha256"]),
+        "Step 8 embedding rows",
+    )
 
-    fold_models = []
     outer_folds = int(editorial_contract["outer_folds"])
+    fold_models = []
     for fold in range(outer_folds):
-        run_directory = root / "rankers" / f"fold-{fold:02d}" / "mrq"
+        run_directory = editorial_root / "rankers" / f"fold-{fold:02d}" / "mrq"
         report_path = run_directory / "report.json"
         report = load_json(report_path)
         _validate_canonical_report(report, report_path)
         model_path = Path(str(report["artifacts"]["model_path"]))
-        if sha256_file(model_path) != str(report["artifacts"]["model_sha256"]):
-            raise ValueError(f"Step 8 MR.Q model changed for fold {fold}")
+        _require_hash(model_path, str(report["artifacts"]["model_sha256"]), "MR.Q model")
         fold_models.append(
             {
                 "fold": fold,
@@ -125,16 +126,8 @@ def prepare_future_transfer(
         "outer_folds": outer_folds,
         "arms": list(ARMS),
         "sources": {
-            "editorial_contract": {
-                "path": str(editorial_contract_path),
-                "sha256": sha256_file(editorial_contract_path),
-                "canonical_sha256": editorial_contract["contract_sha256"],
-            },
-            "source_aggregate": {
-                "path": str(source_aggregate_path),
-                "sha256": sha256_file(source_aggregate_path),
-                "report_sha256": source_aggregate["report_sha256"],
-            },
+            "editorial_contract": _file_source(editorial_contract_path),
+            "source_aggregate": _file_source(source_aggregate_path),
             "embeddings": {
                 "report_path": str(embedding_report_path),
                 "report_sha256": sha256_file(embedding_report_path),
@@ -143,10 +136,7 @@ def prepare_future_transfer(
                 "rows_path": str(rows_path),
                 "rows_sha256": sha256_file(rows_path),
             },
-            "split_manifest": {
-                "path": str(split_path),
-                "sha256": sha256_file(split_path),
-            },
+            "split_manifest": _file_source(split_path),
             "mrq_models": fold_models,
         },
         "target": {
@@ -249,7 +239,7 @@ def run_future_transfer(
         raise ValueError("split manifest has no lineage assignments")
 
     generic = build_generic_representations(torch, rows, context, candidate_a, candidate_b)
-    labels = [int(bool(row["future_revised"])) for row in rows]
+    future_labels = [int(bool(row["future_revised"])) for row in rows]
     output_root = root / "runs"
     output_root.mkdir(parents=True, exist_ok=True)
     completed: list[dict[str, Any]] = []
@@ -265,8 +255,7 @@ def run_future_transfer(
         mrq_representations: dict[str, Any] | None = None
         for arm in selected_arms:
             output = output_root / f"fold-{fold:02d}" / arm
-            report_path = output / "report.json"
-            if report_path.exists() and not force:
+            if (output / "report.json").exists() and not force:
                 skipped.append({"fold": fold, "arm": arm})
                 continue
             if output.exists():
@@ -297,7 +286,7 @@ def run_future_transfer(
                 contract=contract,
                 matrix=matrix,
                 rows=rows,
-                labels=labels,
+                labels=future_labels,
                 partitions=partitions,
                 output=output,
                 fold=fold,
@@ -340,16 +329,16 @@ def aggregate_future_transfer(
     if (output_json.exists() or output_markdown.exists()) and not force:
         raise ValueError(f"Step 8.4 aggregate exists; pass --force: {output_json}")
 
+    rows_path = Path(str(contract["sources"]["embeddings"]["rows_path"]))
+    expected_records = len(load_jsonl(rows_path))
     predictions_by_arm: dict[str, dict[str, tuple[int, float, str]]] = {}
     reports_by_arm: dict[str, Any] = {}
-    expected_records = int(load_jsonl(Path(contract["sources"]["embeddings"]["rows_path"]).__len__())
 
     for arm in ARMS:
         pooled: dict[str, tuple[int, float, str]] = {}
         fold_metrics = []
         for fold in range(int(contract["outer_folds"])):
-            run = root / "runs" / f"fold-{fold:02d}" / arm
-            report_path = run / "report.json"
+            report_path = root / "runs" / f"fold-{fold:02d}" / arm / "report.json"
             report = load_json(report_path)
             _validate_canonical_report(report, report_path)
             if report.get("contract_sha256") != contract.get("contract_sha256"):
@@ -363,6 +352,8 @@ def aggregate_future_transfer(
             test_rows = [
                 row for row in load_jsonl(prediction_path) if str(row.get("partition")) == "test"
             ]
+            if len(test_rows) != int(report["test"]["records"]):
+                raise ValueError(f"Step 8.4 test prediction count mismatch: {prediction_path}")
             for row in test_rows:
                 episode_id = str(row["episode_id"])
                 if episode_id in pooled:
@@ -427,7 +418,9 @@ def aggregate_future_transfer(
         "comparisons": {"primary": primary, "secondary": secondary},
         "future_transfer": {
             "supported": transfer_supported,
-            "primary_rule": "point estimate below zero and 95% lineage-bootstrap upper bound below zero",
+            "primary_rule": (
+                "point estimate below zero and 95% lineage-bootstrap upper bound below zero"
+            ),
             "claim": (
                 "MR.Q choice-aware decision state improves future prediction beyond generic "
                 "choice-aware geometry"
@@ -552,11 +545,11 @@ def paired_transfer_comparison(
 
     if set(treatment) != set(control) or not treatment:
         raise ValueError("paired Step 8.4 arms do not cover identical episodes")
-    differences_by_lineage: dict[str, list[float]] = defaultdict(list)
+    episode_ids = sorted(treatment)
     labels = []
     treatment_probabilities = []
     control_probabilities = []
-    for episode_id in sorted(treatment):
+    for episode_id in episode_ids:
         target_t, probability_t, lineage_t = treatment[episode_id]
         target_c, probability_c, lineage_c = control[episode_id]
         if target_t != target_c or lineage_t != lineage_c:
@@ -564,13 +557,17 @@ def paired_transfer_comparison(
         labels.append(target_t)
         treatment_probabilities.append(probability_t)
         control_probabilities.append(probability_c)
+
     treatment_losses = per_record_log_losses(labels, treatment_probabilities)
     control_losses = per_record_log_losses(labels, control_probabilities)
+    differences_by_lineage: dict[str, list[float]] = defaultdict(list)
     for episode_id, treatment_loss, control_loss in zip(
-        sorted(treatment), treatment_losses, control_losses, strict=True
+        episode_ids,
+        treatment_losses,
+        control_losses,
+        strict=True,
     ):
-        lineage = treatment[episode_id][2]
-        differences_by_lineage[lineage].append(treatment_loss - control_loss)
+        differences_by_lineage[treatment[episode_id][2]].append(treatment_loss - control_loss)
     differences = [value for values in differences_by_lineage.values() for value in values]
     interval = lineage_bootstrap_interval(
         differences_by_lineage,
@@ -625,6 +622,7 @@ def lineage_bootstrap_interval(
 
 
 def render_transfer_plan(contract: Mapping[str, Any]) -> str:
+    del contract
     return "\n".join(
         [
             "# Step 8.4 Editorial MR.Q Future Transfer Plan",
@@ -761,7 +759,10 @@ def _train_future_probe(
             probabilities = (features @ weight + bias).sigmoid().cpu().tolist()
         partition_metrics[partition] = binary_metrics(partition_labels, probabilities)
         for source_index, target, probability in zip(
-            indices, partition_labels, probabilities, strict=True
+            indices,
+            partition_labels,
+            probabilities,
+            strict=True,
         ):
             prediction_rows.append(
                 {
@@ -775,7 +776,8 @@ def _train_future_probe(
     with torch.inference_mode():
         train_probabilities = (train_standardised @ weight + bias).sigmoid().cpu().tolist()
     partition_metrics["train"] = binary_metrics(
-        train_targets.cpu().int().tolist(), train_probabilities
+        train_targets.cpu().int().tolist(),
+        train_probabilities,
     )
 
     model_path = output / "probe.safetensors"
@@ -861,6 +863,10 @@ def _validate_canonical_report(report: Mapping[str, Any], path: Path) -> None:
         raise ValueError(f"canonical report hash is invalid: {path}")
     if report.get("status") != "complete":
         raise ValueError(f"report is incomplete: {path}")
+
+
+def _file_source(path: Path) -> dict[str, str]:
+    return {"path": str(path), "sha256": sha256_file(path)}
 
 
 def _require_hash(path: Path, expected: str, label: str) -> None:
