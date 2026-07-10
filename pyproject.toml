@@ -22,6 +22,7 @@ train = [
   "transformers>=5.0,<6",
   "huggingface-hub>=0.30",
   "safetensors>=0.5",
+  "xgboost>=3.0,<4",
 ]
 
 [project.scripts]
@@ -55,3 +56,4 @@ line-length = 100
 "src/preference_futures/editorial_mrq/runtime.py" = ["F401", "F841"]
 "src/preference_futures/editorial_mrq/oracle.py" = ["F401"]
 "src/preference_futures/editorial_mrq/shuffled_aggregate.py" = ["F401"]
+"src/preference_futures/editorial_mrq/xgboost_combined.py" = ["F401"]
