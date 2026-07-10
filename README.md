@@ -4,6 +4,7 @@ Research code for testing whether preference-specific learning transfers to pred
 
 ## Publication and evidence map
 
+- [Blog Post](https://programmer.ie/post/future)
 - [Executable blog draft](docs/blog/what-does-a-preference-know-about-the-future.md)
 - [Research claim ledger](docs/CLAIMS.md)
 - [Representation experiment steps](docs/experiments/README.md)
