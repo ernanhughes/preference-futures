@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import math
 import statistics
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -144,7 +144,7 @@ def aggregate_editorial_mrq(
             "mrq_pooled_source_gate": bool(ranker_reports["mrq"]["source_gate"]["passed"]),
             "mrq_log_loss_below_linear": float(paired["mrq_minus_linear_log_loss"]) < 0.0,
         },
-        "future_transfer_unblocked": False,
+        "future_transfer_claim_made": False,
         "note": (
             "A passing source gate permits implementation of Step 8.4; it does not itself make "
             "a future-transfer claim."
