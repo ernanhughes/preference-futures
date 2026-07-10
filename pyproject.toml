@@ -37,6 +37,7 @@ preference-futures-representations = "preference_futures.representations.cli:mai
 preference-futures-probes = "preference_futures.probes.cli:main"
 preference-futures-milestone = "preference_futures.milestone.cli:main"
 preference-futures-diagnostics = "preference_futures.diagnostics.cli:main"
+preference-futures-editorial-mrq = "preference_futures.editorial_mrq.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -49,3 +50,7 @@ addopts = "-q"
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint.per-file-ignores]
+"src/preference_futures/editorial_mrq/runtime.py" = ["F401", "F841"]
+"src/preference_futures/editorial_mrq/oracle.py" = ["F401"]
